@@ -3,7 +3,7 @@
   "projects": {
     "warp": {
       "repository": "rustwrt/luci-proto-warp",
-      "revision": "7217d9155753cb613075514fd7b0986ba08f0d47",
+      "revision": "83d719957c7d24bc969767a96043c761b729981a",
       "directories": [
         "net/cloudflare-warp",
         "luci/luci-proto-warp"
