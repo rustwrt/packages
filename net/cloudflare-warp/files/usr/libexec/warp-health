@@ -1,0 +1,90 @@
+#!/bin/sh
+# One bounded recovery cycle per interface setup. No registration API calls.
+umask 077
+iface="$1"
+case "$iface" in ''|*[!A-Za-z0-9_-]*) exit 1;; esac
+[ "${#iface}" -le 15 ] || exit 1
+dir="/tmp/warp/session-$iface"
+[ -s "$dir/owner" ] || exit 1
+owner="$(cat "$dir/owner")"
+case "$owner" in ''|*[!0-9]*) exit 1;; esac
+pub="$(wg show "$iface" public-key 2>/dev/null)" || exit 1
+peer="$(wg show "$iface" peers 2>/dev/null)" || exit 1
+case "$pub:$peer" in *'
+'*|:*|*:) exit 1;; esac
+mark="$(wg show "$iface" fwmark 2>/dev/null)" || exit 1
+case "$mark" in 0x[0-9a-fA-F]*|[0-9]*) ;; *) exit 1;; esac
+id=$((mark + 0))
+[ "$id" -ge 51820 ] && [ "$id" -lt 52820 ] || exit 1
+transport="/tmp/warp/transport-$id"
+read -r transport_iface transport_owner < "$transport/owner" || exit 1
+[ "$transport_iface" = "$iface" ] && [ "$transport_owner" = "$owner" ] || exit 1
+lock="/tmp/warp-health-$iface-$owner"
+mkdir "$lock" 2>/dev/null || exit 0
+trap 'rmdir "$lock" 2>/dev/null || :' EXIT HUP INT TERM
+alive() {
+ [ "$(cat "$dir/owner" 2>/dev/null)" = "$owner" ] &&
+ [ "$(wg show "$iface" public-key 2>/dev/null)" = "$pub" ] &&
+ [ "$(wg show "$iface" fwmark 2>/dev/null)" = "$mark" ]
+}
+alive || exit 1
+# Refresh mode only checks the current tunnel. It must never change its route,
+# endpoint, keys or registration when an old Public IP cache expires.
+if [ "${2:-}" != refresh ]; then
+# The route must be added after netifd's ifup; otherwise it is discarded
+# during device updates. Never replace another application's table contents.
+if [ -f "$transport/ipv6-active" ]; then
+ route6="$(ip -6 route show table "$id" 2>/dev/null)" || route6=''
+ if [ -z "$route6" ]; then
+  ip -6 route add default dev "$iface" table "$id" || logger -t warp-health "$iface IPv6 route unavailable"
+ elif ! printf '%s\n' "$route6" | grep -q "^default dev $iface "; then
+  logger -t warp-health "$iface IPv6 table conflict"
+ fi
+fi
+# Allow the initial handshake, then try known Cloudflare endpoints only when
+# the user has not selected an explicit endpoint.
+override="$(uci -q get "network.$iface.endpoint" 2>/dev/null)"
+current="$(wg show "$iface" endpoints 2>/dev/null | awk '{print $2}')"
+port="${current##*:}"
+case "$port" in ''|*[!0-9]*) port=2408;; esac
+case "$current" in 162.159.192.*:*) candidates="162.159.192.2 162.159.192.3 162.159.192.5 162.159.192.6 162.159.192.1 162.159.192.4 162.159.192.7 162.159.192.8 162.159.192.9 162.159.192.10";; *) candidates='';; esac
+[ -z "$override" ] || candidates=''
+connected() {
+ now="$(date +%s)"
+ hs="$(wg show "$iface" latest-handshakes 2>/dev/null | awk 'NR==1 {print $2}')"
+ case "$hs:$now" in *[!0-9:]*|:*|*:) return 1;; esac
+ [ "$hs" -gt 0 ] && [ "$hs" -le "$now" ] && [ $((now-hs)) -lt 180 ]
+}
+probe() { ping -4 -c 1 -W 1 -I "$iface" 1.1.1.1 >/dev/null 2>&1 || :; }
+probe
+sleep 2
+for host in $candidates; do
+ alive || exit 0
+ connected && break
+ candidate="$host:$port"
+ [ "$candidate" != "$current" ] || continue
+ wg set "$iface" peer "$peer" endpoint "$candidate" || break
+ current="$candidate"
+ probe
+ sleep 3
+done
+alive || exit 0
+if ! connected; then
+ printf '%s\n' handshake_timeout > "$dir/health-state"
+ logger -t warp-health "$iface handshake timeout after bounded endpoint checks"
+ exit 0
+fi
+printf '%s\n' handshake_ok > "$dir/health-state"
+fi
+# HTTPS verification is asynchronous relative to Status RPC.
+for family in 4 6; do
+ alive || exit 0
+ trace="$(curl -q --noproxy '*' --interface "if!$iface" -"$family" --connect-timeout 3 --max-time 5 -fsS https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null)" || trace=''
+ ip="$(printf '%s\n' "$trace" | sed -n 's/^ip=//p' | head -n 1)"
+ warp="$(printf '%s\n' "$trace" | sed -n 's/^warp=//p' | head -n 1)"
+ case "$ip" in ''|*[!0-9a-fA-F.:]*) ip='';; esac
+ if [ "$warp" = on ] && [ -n "$ip" ]; then
+  alive || exit 0
+  printf '%s %s\n' "$(date +%s)" "$ip" > "$dir/health$family"
+ fi
+done

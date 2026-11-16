@@ -1,0 +1,24 @@
+name: Request shared feed candidate
+on:
+  push:
+    branches: [main]
+    paths: ['net/**', 'luci/**', 'utils/**', 'provenance.json']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rustwrt-package-candidate
+  cancel-in-progress: false
+jobs:
+  request:
+    if: github.repository == 'rustwrt/packages' && vars.PACKAGE_BUILD_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Request website build for exact reviewed feed revision
+        env:
+          GH_TOKEN: ${{ secrets.WEBSITE_WORKFLOW_TOKEN }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          test -n "$GH_TOKEN"
+          gh workflow run package-build.yml --repo rustwrt/website --ref main -f source_repository="$SOURCE_REPOSITORY" -f source_revision="$SOURCE_REVISION"

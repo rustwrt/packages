@@ -1,0 +1,22 @@
+#!/bin/sh
+# Experimental; package and OpenWrt integration have not yet been verified.
+umask 077
+[ "$(id -u)" = 0 ] || { echo 'warp-reg: root required' >&2; exit 1; }
+awk '$2 == "/tmp" && $3 == "tmpfs" { found=1 } END { exit !found }' /proc/mounts || { echo 'warp-reg: /tmp must be tmpfs' >&2; exit 1; }
+[ ! -L /tmp/warp ] || { echo 'warp-reg: invalid session directory' >&2; exit 1; }
+if [ -e /tmp/warp ]; then
+ [ -d /tmp/warp ] && [ "$(stat -c %u /tmp/warp)" = 0 ] || { echo 'warp-reg: unsafe directory' >&2; exit 1; }
+else
+ mkdir -m 700 /tmp/warp || exit 1
+fi
+chmod 700 /tmp/warp || exit 1
+for path in /etc/warp-reg /etc/warp-reg/accounts; do
+ [ ! -L "$path" ] || { echo 'warp-reg: unsafe account directory' >&2; exit 1; }
+ if [ -e "$path" ]; then
+  [ -d "$path" ] && [ "$(stat -c %u "$path")" = 0 ] || { echo 'warp-reg: unsafe account directory' >&2; exit 1; }
+ else
+  mkdir -m 700 "$path" || exit 1
+ fi
+ chmod 700 "$path" || exit 1
+done
+exec flock -F -w 180 /tmp/warp/.global.lock /usr/bin/lua /usr/lib/warp/warp-reg.lua "$@"

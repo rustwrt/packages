@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.ipk
+*.apk
+*.lmo
+*.key
+.env
+artifacts/
+
+# Generated files and local secrets
+/target/
+/node_modules/
+/dist/
+/.astro/
+/.wrangler/
+__pycache__/
+*.pyc
+*.bak
+*.ipk
+*.apk
+*.lmo
+*.key
+*.pem
+*.pfx
+.env
+.env.*
+*.log

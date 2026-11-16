@@ -1,0 +1,184 @@
+#!/usr/bin/lua
+local cjson=require('cjson')
+local function safeName(value,maxLength)
+ return type(value)=='string' and #value>0 and #value<=maxLength and value:match('^[A-Za-z0-9_%-]+$')~=nil
+end
+local function quote(value) return "'"..value:gsub("'","'\\''").."'" end
+local function readFile(path,limit)
+ local file=io.open(path,'rb'); if not file then return nil end
+ local text=file:read(limit+1); file:close()
+ if not text or #text>limit then return nil end
+ return text
+end
+local function jsonData(text)
+ if not text then return nil end
+ local ok,value=pcall(cjson.decode,text)
+ if ok and type(value)=='table' then return value end
+end
+local function commandText(command,limit)
+ local pipe=io.popen(command..' 2>/dev/null','r'); if not pipe then return nil end
+ local text=pipe:read(limit+1); local ok=pipe:close()
+ if ok==nil or ok==false or not text or #text>limit then return nil end
+ return text
+end
+local function commandLine(command)
+ local text=commandText(command,4096)
+ return text and text:match('^([^\r\n]*)')
+end
+local function uciValue(iface,key)
+ return commandLine('/sbin/uci -q get '..quote('network.'..iface..'.'..key))
+end
+local function wgLine(iface,field)
+ return commandLine('/usr/bin/wg show '..quote(iface)..' '..field)
+end
+local errorCodes={}
+for code in ('INVALID_NAME INVALID_ACCOUNT INVALID_ACCOUNT_MODE INVALID_MTU IPV6_MTU_TOO_SMALL INVALID_KEEPALIVE UNDERLAY_UNAVAILABLE UNDERLAY_REQUIRED INVALID_UNDERLAY UNDERLAY_LOOP INVALID_ENDPOINT DEVICE_EXISTS SESSION_FAILED BAD_SESSION NO_IPV6_ADDRESS CREATE_FAILED SETUP_FAILED ENDPOINT_UNREACHABLE UPDATE_FAILED DEVICE_OWNERSHIP_LOST TOS_REQUIRED'):gmatch('%S+') do errorCodes[code]=true end
+local function statusFor(iface)
+ if not safeName(iface,15) then return {error='invalid interface'} end
+ if uciValue(iface,'proto')~='warp' then return {error='not a WARP interface'} end
+ local session=jsonData(readFile('/tmp/warp/session-'..iface..'/session.json',65536))
+ local account=session and session.account
+ local accountMode=session and session.account_mode or 'fresh'
+ if accountMode~='random' and accountMode~='custom' and accountMode~='fresh' then accountMode='fresh' end
+ local result={interface=iface,accountMode=accountMode,accountStored=false,up=false,pending=false,available=false,state='unavailable'}
+ result.underlayInterface=uciValue(iface,'tunlink')
+ local netifd=jsonData(commandText('/bin/ubus -S call '..quote('network.interface.'..iface)..' status',65536))
+ if netifd and type(netifd.up)=='boolean' and type(netifd.pending)=='boolean' then
+  result.up=netifd.up
+  result.pending=netifd.pending
+  result.available=netifd.available==true
+  result.state=result.up and 'up' or (result.pending and 'pending' or 'down')
+  if type(netifd.errors)=='table' then
+   for _,entry in ipairs(netifd.errors) do
+    if type(entry)=='table' then
+     result.errorCode=errorCodes[entry.code] and entry.code or 'NETIFD_ERROR'
+     result.error=result.errorCode
+     if not result.up and not result.pending then result.state='error' end
+     break
+    end
+   end
+  end
+ else
+  result.errorCode='NETIFD_UNAVAILABLE'
+  result.error='Network interface status unavailable'
+ end
+ local accountPath
+ if accountMode=='random' then accountPath='/tmp/warp/random-'..iface..'.json'
+ elseif accountMode=='custom' and safeName(account,32) then accountPath='/etc/warp-reg/accounts/'..account..'.json' end
+ local stored=accountPath and jsonData(readFile(accountPath,65536))
+ if stored and type(stored.device_id)=='string' and stored.device_id:match('^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$') and type(stored.access_token)=='string' and #stored.access_token>0 then
+  result.accountStored=true
+  result.deviceIdMasked=stored.device_id:sub(1,4)..'...'..stored.device_id:sub(-4)
+ end
+ if session then
+  if accountMode=='fresh' and type(session.device_id_masked)=='string' and session.device_id_masked:match('^%x%x%x%x%.%.%.%x%x%x%x$') then
+   result.accountStored=true;result.deviceIdMasked=session.device_id_masked
+  end
+  if type(session.ipv4)=='string' and #session.ipv4<=15 and session.ipv4:match('^[%d.]+$') then result.ipv4=session.ipv4 end
+  if type(session.ipv6)=='string' and #session.ipv6<=45 and session.ipv6:match('^[%x:%.]+$') then result.ipv6=session.ipv6 end
+  if type(session.endpoint)=='string' and #session.endpoint<=64 and session.endpoint:match('^[%x:%.%[%]]+:%d+$') then result.endpoint=session.endpoint end
+  if type(session.underlay_device)=='string' and #session.underlay_device<=15 and session.underlay_device:match('^[A-Za-z0-9_.%-]+$') then result.underlayDevice=session.underlay_device end
+  if type(session.started_at)=='number' and session.started_at>=0 and session.started_at<1e12 then result.startedAt=session.started_at end
+ end
+ if result.up then
+  for _,family in ipairs({'ipv4','ipv6'}) do
+   local actual=netifd and netifd[family..'-address']
+   local found=false
+   if type(actual)=='table' then for _,entry in ipairs(actual) do if type(entry)=='table' and entry.address==result[family] then found=true end end end
+   if not found then result[family]=nil end
+  end
+ else result.ipv4=nil; result.ipv6=nil end
+ local handshake=wgLine(iface,'latest-handshakes')
+ local when=handshake and handshake:match('^%S+%s+(%d+)%s*$')
+ if when then result.latestHandshake=tonumber(when) end
+ local transfer=wgLine(iface,'transfer')
+ local rx,tx;if transfer then rx,tx=transfer:match('^%S+%s+(%d+)%s+(%d+)%s*$') end
+ if rx then result.rxBytes=rx;result.txBytes=tx end
+ local endpoint=wgLine(iface,'endpoints')
+ local resolved=endpoint and endpoint:match('^%S+%s+([%x:%.%[%]]+:%d+)%s*$')
+ if resolved and #resolved<=64 then result.endpoint=resolved end
+ local mark=wgLine(iface,'fwmark')
+ local host=result.endpoint and result.endpoint:match('^(%d+%.%d+%.%d+%.%d+):%d+$')
+ if host and mark and (mark:match('^0x%x+$') or mark:match('^%d+$')) then
+  local route=commandLine('ip -4 route get '..quote(host)..' mark '..quote(mark))
+  local device=route and route:match('%sdev%s+([A-Za-z0-9_.%-]+)')
+  if device and #device<=15 then result.transportDevice=device end
+ end
+ if readFile('/tmp/warp/session-'..iface..'/health-state',64)=='handshake_timeout\n' then
+  result.errorCode='HANDSHAKE_TIMEOUT'; result.error='HANDSHAKE_TIMEOUT'
+ end
+ return result
+end
+local function statusAll()
+ local config=commandText('/sbin/uci -q show network',262144)
+ if not config then return {error='Interface configuration unavailable',interfaces={}} end
+ local interfaces={}
+ for line in config:gmatch('[^\r\n]+') do
+  local iface=line:match('^network%.([A-Za-z0-9_%-]+)=interface$')
+  if safeName(iface,15) and uciValue(iface,'proto')=='warp' then interfaces[#interfaces+1]=statusFor(iface) end
+ end
+ table.sort(interfaces,function(left,right) return left.interface<right.interface end)
+ return {interfaces=interfaces}
+end
+local function wireStatus(result)
+ return {interface=result.interface,account_mode=result.accountMode,account_stored=result.accountStored,device_id_masked=result.deviceIdMasked,up=result.up,pending=result.pending,available=result.available,state=result.state,error=result.error,error_code=result.errorCode,ipv4=result.ipv4,ipv6=result.ipv6,endpoint=result.endpoint,started_at=result.startedAt,latest_handshake=result.latestHandshake,rx_bytes=result.rxBytes,tx_bytes=result.txBytes,public_ipv4=result.publicIPv4,public_ipv6=result.publicIPv6,underlay_interface=result.underlayInterface,underlay_device=result.underlayDevice,transport_device=result.transportDevice,internet_ipv4=result.publicIPv4~=nil,internet_ipv6=result.publicIPv6~=nil}
+end
+local function publicIP(iface, family)
+ if not safeName(iface,15) or (family~='4' and family~='6') then return nil end
+ local text=readFile('/tmp/warp/session-'..iface..'/health'..family,128)
+ local at,ip
+ if text then at,ip=text:match('^(%d+) ([%x%.:]+)') end
+ at=tonumber(at)
+ local now=os.time()
+ if not at or not ip or #ip>64 or at>now then return nil,nil end
+ local age=now-at
+ if age>180 then return nil,age end
+ return ip,age
+end
+-- Trigger verification outside the RPC process; each session gets a separate
+-- throttle. The worker never changes endpoints in refresh mode.
+local function refreshPublicIP(status, age4, age6)
+ local iface=status.interface
+ if not safeName(iface,15) or not status.up then return end
+ local now=os.time()
+ local hs=tonumber(status.latestHandshake)
+ if not hs or hs<=0 or hs>now or now-hs>180 then return end
+ if age4 and age4<60 and (not status.ipv6 or (age6 and age6<60)) then return end
+ local owner=readFile('/tmp/warp/session-'..iface..'/owner',32)
+ if not owner or not owner:match('^%d+$') then return end
+ local marker='/tmp/warp/public-refresh-'..iface..'-'..owner
+ local last=tonumber(readFile(marker,32))
+ if last and last<=now and now-last<60 then return end
+ local file=io.open(marker,'wb')
+ if not file then return end
+ local ok=file:write(tostring(now)); file:close()
+ if not ok then return end
+ os.execute('/usr/libexec/warp-health '..quote(iface)..' refresh </dev/null >/dev/null 2>&1 &')
+end
+local function encodeAll(result)
+ local encoded={}
+ for _,status in ipairs(result.interfaces) do
+    if status.up and status.interface then
+      local age4,age6
+      status.publicIPv4,age4=publicIP(status.interface,'4')
+      status.publicIPv6,age6=publicIP(status.interface,'6')
+      refreshPublicIP(status,age4,age6)
+    end
+    encoded[#encoded+1]=cjson.encode(wireStatus(status))
+  end
+ return '{"interfaces":['..table.concat(encoded,',')..']'..(result.error and ',"error":'..cjson.encode(result.error) or '')..'}'
+end
+if arg[1]=='list' then
+ print('{"status":{"interface":""},"status_all":{}}')
+elseif arg[1]=='call' and (arg[2]=='status' or arg[2]=='status_all') then
+ local input=io.read(4097)
+ local request=input and #input<=4096 and jsonData(input) or nil
+ local ok,out=pcall(function()
+  if not request then return cjson.encode({error='invalid request'}) end
+  if arg[2]=='status_all' then return encodeAll(statusAll()) end
+  return cjson.encode(wireStatus(statusFor(request.interface)))
+ end)
+ print(ok and out or '{"error":"status unavailable"}')
+else
+ print('{}')
+end

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "projects": {
+    "warp": {
+      "repository": "rustwrt/luci-proto-warp",
+      "revision": "7217d9155753cb613075514fd7b0986ba08f0d47",
+      "directories": [
+        "net/cloudflare-warp",
+        "luci/luci-proto-warp"
+      ]
+    }
+  }
+}
