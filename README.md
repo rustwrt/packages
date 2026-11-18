@@ -1,17 +1,61 @@
-# RustWRT Packages
+# RustWRT packages / Gói OpenWrt RustWRT
 
-Shared native OpenWrt source feed. WARP is the initial development candidate; no stable binary feed is published yet.
+## Tiếng Việt
 
-    src-git rustwrt https://github.com/rustwrt/packages.git
+Repository này chứa trực tiếp **mã nguồn và Makefile** của các gói OpenWrt.
 
-For reproducible firmware builds append ^FULL_COMMIT_SHA to the URL. For local development, use:
+| Gói | Đường dẫn | Phụ thuộc chính |
+| --- | --- | --- |
+| `cloudflare-warp` | `net/cloudflare-warp/` | `ucode`, `netifd`, `wireguard-tools`, `kmod-wireguard`, `curl` |
+| `luci-app-warp` | `luci/luci-app-warp/` | `cloudflare-warp`, `luci-base`, `rpcd`, `ucode` |
+| `netbraid` | `net/netbraid/` | `ucode`, `ucode-mod-uci`, `ucode-mod-ubus`, `rpcd-mod-ucode` |
+| `luci-app-netbraid` | `luci/luci-app-netbraid/` | `netbraid`, `luci-base` |
+| `luci-i18n-warp-vi` | `luci/luci-app-warp/` | `luci-app-warp`, `luci-i18n-base-vi` |
 
-    src-link rustwrt /absolute/path/to/RustWRT/rustwrt/packages
+NetBraid đang phát triển; mã nguồn, tài liệu và kiểm thử được lưu cùng feed tại `development/netbraid/`.
 
-Run scripts/feeds update rustwrt then scripts/feeds install -a -p rustwrt. The WARP backend, LuCI integration, and optional Vietnamese language package come from two package directories.
+**Không còn package `luci-proto-warp`.** Giao diện WARP là ứng dụng LuCI độc lập tại Network → Cloudflare WARP. Backend vẫn sử dụng netifd/WireGuard để quản lý kết nối. Tài liệu và bài kiểm thử nguồn cũ ở `development/warp/`.
 
-Import a reviewed committed source revision using python3 tools/import-warp.py /path/to/luci-proto-warp FULL_COMMIT_SHA; review the changes and provenance.json before committing. Do not edit mirrored package files independently. Further projects can add category/package directories and register their origin.
+Thêm feed vào `feeds.conf.default`:
 
-Binary distribution is owned by rustwrt/website. Native signed IPK and APK only. No credentials, private signing keys, binary artifacts or VM data belong here.
+```text
+src-git rustwrt https://github.com/rustwrt/packages.git
+```
 
-To enable automatic candidate builds, configure PACKAGE_BUILD_ENABLED=true and a narrowly scoped WEBSITE_WORKFLOW_TOKEN (Actions write on rustwrt/website) to request a candidate automatically on main. This does not publish a stable release.
+```sh
+./scripts/feeds update rustwrt
+./scripts/feeds install -a -p rustwrt
+make menuconfig
+```
+
+Đây là mã nguồn phát triển, chưa phải bản phát hành APK/IPK đã xác minh. Kiểm tra Makefile để biết phụ thuộc đầy đủ và build trên SDK đúng phiên bản trước khi cài.
+
+## English
+
+This repository directly contains **OpenWrt package source and Makefiles**.
+
+| Package | Path | Key dependencies |
+| --- | --- | --- |
+| `cloudflare-warp` | `net/cloudflare-warp/` | `ucode`, `netifd`, `wireguard-tools`, `kmod-wireguard`, `curl` |
+| `luci-app-warp` | `luci/luci-app-warp/` | `cloudflare-warp`, `luci-base`, `rpcd`, `ucode` |
+| `netbraid` | `net/netbraid/` | `ucode`, `ucode-mod-uci`, `ucode-mod-ubus`, `rpcd-mod-ucode` |
+| `luci-app-netbraid` | `luci/luci-app-netbraid/` | `netbraid`, `luci-base` |
+| `luci-i18n-warp-vi` | `luci/luci-app-warp/` | `luci-app-warp`, `luci-i18n-base-vi` |
+
+NetBraid is in development; its source, documentation and tests are maintained in this feed under `development/netbraid/`.
+
+**The `luci-proto-warp` package is retired.** WARP has a standalone LuCI page under Network → Cloudflare WARP; the backend still relies on netifd/WireGuard. Former development documentation and tests are under `development/warp/`.
+
+Add to `feeds.conf.default`:
+
+```text
+src-git rustwrt https://github.com/rustwrt/packages.git
+```
+
+```sh
+./scripts/feeds update rustwrt
+./scripts/feeds install -a -p rustwrt
+make menuconfig
+```
+
+Development source only; no verified APK/IPK release yet. Consult Makefiles for complete dependencies and build with a matching SDK before deployment.

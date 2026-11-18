@@ -1,8 +1,0 @@
-{
-  "luci-proto-warp": {
-    "description": "Read Cloudflare WARP interface status",
-    "read": {
-      "ubus": { "luci.warp": [ "status", "status_all" ] }
-    }
-  }
-}

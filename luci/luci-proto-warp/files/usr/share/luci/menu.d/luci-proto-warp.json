@@ -1,1 +1,0 @@
-{"admin/status/warp": {"title": "WARP", "order": 75, "action": {"type": "view", "path": "status/warp"}, "depends": {"acl": ["luci-proto-warp"]}}}

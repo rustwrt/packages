@@ -1,0 +1,38 @@
+#!/usr/bin/lua
+local function main()
+    local command = arg[1] or "help"
+    if command == "help" then
+        io.write("Usage: routebraid discover | check-config\nThis development build does not apply routing changes.\n")
+        return
+    end
+    if command == "check-config" then
+        local cursor = require("uci").cursor()
+        assert(cursor:load("routebraid"), "cannot load routebraid configuration")
+        local enabled = cursor:get("routebraid", "main", "enabled")
+        assert(enabled == "0" or enabled == "1", "main.enabled must be 0 or 1")
+        assert(enabled == "0", "routing activation is unavailable in this development build")
+        io.write("Configuration valid; routing disabled.\n")
+        return
+    end
+    assert(command == "discover", "unsupported command; use help")
+    local connection = assert(require("ubus").connect(), "cannot connect to ubus")
+    local dump = connection:call("network.interface", "dump", {})
+    connection:close()
+    assert(dump, "netifd interface dump failed")
+    local inventory = require("routebraid.discovery").normalize(dump)
+    local function serialize(input)
+        if type(input) ~= "table" then return input end
+        local output = {}
+        for key, value in pairs(input) do
+            local wireKey = type(key) == "string" and key:gsub("(%l)(%u)", "%1_%2"):lower() or key
+            output[wireKey] = serialize(value)
+        end
+        return output
+    end
+    io.write(require("cjson").encode(serialize(inventory)), "\n")
+end
+local success, message = pcall(main)
+if not success then
+    io.stderr:write("routebraid: ", tostring(message), "\n")
+    os.exit(1)
+end

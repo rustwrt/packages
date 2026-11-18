@@ -1,0 +1,230 @@
+msgid ""
+msgstr ""
+"Language: vi\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgctxt "luci-app-warp"
+msgid "%s hours ago"
+msgstr "%s giờ trước"
+
+msgctxt "luci-app-warp"
+msgid "%s minutes ago"
+msgstr "%s phút trước"
+
+msgctxt "luci-app-warp"
+msgid "%s seconds ago"
+msgstr "%s giây trước"
+
+msgctxt "luci-app-warp"
+msgid "Actual transport device"
+msgstr "Thiết bị truyền tải thực tế"
+
+msgctxt "luci-app-warp"
+msgid "Choose an existing non-WARP upstream interface."
+msgstr "Chọn giao diện kết nối Internet hiện có, không phải WARP."
+
+msgctxt "luci-app-warp"
+msgid "Cloudflare WARP"
+msgstr "Cloudflare WARP"
+
+msgctxt "luci-app-warp"
+msgid "Cloudflare WARP Status"
+msgstr "Trạng thái Cloudflare WARP"
+
+msgctxt "luci-app-warp"
+msgid "Cloudflare WARP status is unavailable."
+msgstr "Không thể lấy trạng thái Cloudflare WARP."
+
+msgctxt "luci-app-warp"
+msgid "Connecting"
+msgstr "Đang kết nối"
+
+msgctxt "luci-app-warp"
+msgid "Connection"
+msgstr "Kết nối"
+
+msgctxt "luci-app-warp"
+msgid "Connection uptime"
+msgstr "Thời gian kết nối"
+
+msgctxt "luci-app-warp"
+msgid "Data Received"
+msgstr "Dữ liệu đã nhận"
+
+msgctxt "luci-app-warp"
+msgid "Data Transmitted"
+msgstr "Dữ liệu đã gửi"
+
+msgctxt "luci-app-warp"
+msgid "Default (OpenWrt Internet route)"
+msgstr "Mặc định (tuyến Internet của OpenWrt)"
+
+msgctxt "luci-app-warp"
+msgid "Default follows the OpenWrt default Internet route. Registration and session keys are created automatically for each connection."
+msgstr "Mặc định sử dụng tuyến Internet mặc định của OpenWrt. Thông tin đăng ký và khóa phiên được tạo tự động cho mỗi kết nối."
+
+msgctxt "luci-app-warp"
+msgid "Detailed Cloudflare WARP status"
+msgstr "Trạng thái chi tiết Cloudflare WARP"
+
+msgctxt "luci-app-warp"
+msgid "Down"
+msgstr "Đã ngắt kết nối"
+
+msgctxt "luci-app-warp"
+msgid "Endpoint"
+msgstr "Điểm cuối"
+
+msgctxt "luci-app-warp"
+msgid "Endpoint override"
+msgstr "Chỉ định điểm cuối"
+
+msgctxt "luci-app-warp"
+msgid "Enter a valid IPv4 address and port."
+msgstr "Nhập địa chỉ IPv4 và cổng hợp lệ."
+
+msgctxt "luci-app-warp"
+msgid "Error"
+msgstr "Lỗi"
+
+msgctxt "luci-app-warp"
+msgid "Handshake"
+msgstr "Bắt tay"
+
+msgctxt "luci-app-warp"
+msgid "Handshake OK; Internet recently verified"
+msgstr "Bắt tay thành công; đã xác minh Internet gần đây"
+
+msgctxt "luci-app-warp"
+msgid "Handshake OK; Internet unverified"
+msgstr "Bắt tay thành công; chưa xác minh Internet"
+
+msgctxt "luci-app-warp"
+msgid "Handshake received; Internet unverified"
+msgstr "Đã bắt tay; chưa xác minh Internet"
+
+msgctxt "luci-app-warp"
+msgid "Handshake timeout"
+msgstr "Hết thời gian chờ bắt tay"
+
+msgctxt "luci-app-warp"
+msgid "IP Addresses"
+msgstr "Địa chỉ IP"
+
+msgctxt "luci-app-warp"
+msgid "IPv4 / IPv6"
+msgstr "IPv4 / IPv6"
+
+msgctxt "luci-app-warp"
+msgid "IPv6 requires an MTU of at least 1280."
+msgstr "IPv6 yêu cầu MTU tối thiểu 1280."
+
+msgctxt "luci-app-warp"
+msgid "Interface"
+msgstr "Giao diện"
+
+msgctxt "luci-app-warp"
+msgid "Interface up; handshake pending or stale"
+msgstr "Giao diện đã bật; đang chờ bắt tay hoặc bắt tay đã quá hạn"
+
+msgctxt "luci-app-warp"
+msgid "Internet verified recently"
+msgstr "Đã xác minh kết nối Internet gần đây"
+
+msgctxt "luci-app-warp"
+msgid "Latest Handshake"
+msgstr "Lần bắt tay gần nhất"
+
+msgctxt "luci-app-warp"
+msgid "MTU"
+msgstr "MTU"
+
+msgctxt "luci-app-warp"
+msgid "No Cloudflare WARP interfaces configured."
+msgstr "Chưa cấu hình giao diện Cloudflare WARP."
+
+msgctxt "luci-app-warp"
+msgid "No WARP interfaces available"
+msgstr "Không có giao diện WARP khả dụng"
+
+msgctxt "luci-app-warp"
+msgid "Not yet"
+msgstr "Chưa thực hiện"
+
+msgctxt "luci-app-warp"
+msgid "Optional IPv4 address and UDP port, for example 192.0.2.1:2408."
+msgstr "Địa chỉ IPv4 và cổng UDP tùy chọn, ví dụ 192.0.2.1:2408."
+
+msgctxt "luci-app-warp"
+msgid "Persistent keepalive (seconds)"
+msgstr "Duy trì kết nối (giây)"
+
+msgctxt "luci-app-warp"
+msgid "Public IPv4"
+msgstr "IPv4 công cộng"
+
+msgctxt "luci-app-warp"
+msgid "Public IPv6"
+msgstr "IPv6 công cộng"
+
+msgctxt "luci-app-warp"
+msgid "RX / TX"
+msgstr "Nhận / Gửi"
+
+msgctxt "luci-app-warp"
+msgid "Selected upstream"
+msgstr "Kết nối Internet đã chọn"
+
+msgctxt "luci-app-warp"
+msgid "Status"
+msgstr "Trạng thái"
+
+msgctxt "luci-app-warp"
+msgid "Traffic"
+msgstr "Lưu lượng"
+
+msgctxt "luci-app-warp"
+msgid "Tunnel IPv4"
+msgstr "IPv4 đường hầm"
+
+msgctxt "luci-app-warp"
+msgid "Tunnel IPv6"
+msgstr "IPv6 đường hầm"
+
+msgctxt "luci-app-warp"
+msgid "Upstream"
+msgstr "Kết nối Internet"
+
+msgctxt "luci-app-warp"
+msgid "Upstream device"
+msgstr "Thiết bị kết nối Internet"
+
+msgctxt "luci-app-warp"
+msgid "Upstream interface"
+msgstr "Giao diện kết nối Internet"
+
+msgctxt "luci-app-warp"
+msgid "%s seconds"
+msgstr "%s giây"
+
+msgctxt "luci-app-warp"
+msgid "%s minutes"
+msgstr "%s phút"
+
+msgctxt "luci-app-warp"
+msgid "%s hours"
+msgstr "%s giờ"
+
+msgctxt "luci-app-warp"
+msgid "%s days"
+msgstr "%s ngày"
+
+msgctxt "luci-app-warp"
+msgid "%s days ago"
+msgstr "%s ngày trước"
+
+msgctxt "luci-app-warp"
+msgid "Unavailable"
+msgstr "Không khả dụng"

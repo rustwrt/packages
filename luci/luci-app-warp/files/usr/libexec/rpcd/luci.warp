@@ -1,0 +1,113 @@
+#!/usr/bin/ucode
+import * as fs from 'fs';
+import { cursor } from 'uci';
+import { connect } from 'ubus';
+
+function name_ok(s,n) { return type(s)=='string' && length(s)<=n && match(s,/^[A-Za-z0-9_][A-Za-z0-9_-]*$/); }
+function device_ok(s) { return type(s)=='string'&&length(s)<=15&&match(s,/^[A-Za-z0-9_.-]+$/); }
+function read(path,limit) {
+    let f=fs.open(path,'r'); if (!f) return null;
+    let s=f.read(limit+1); f.close();
+    return type(s)=='string'&&length(s)<=limit?s:null;
+}
+function decode(s) {
+    try { let v=json(s); return type(v)=='object'?v:null; } catch(e) { return null; }
+}
+function line(cmd) {
+    let p=fs.popen(cmd+' 2>/dev/null','r'); if(!p) return null;
+    let data=p.read(4097); let rc=p.close();
+    return rc==0&&type(data)=='string'&&length(data)<=4096?split(data,'\n')[0]:null;
+}
+function public_ip(iface,family) {
+    let m=match(read('/tmp/warp/session-'+iface+'/health'+family,128)||'',/^([0-9]+) ([0-9a-fA-F.:]+)/);
+    if (!m||length(m[2])>64||int(m[1])>time()) return [null,null];
+    let age=time()-int(m[1]); return [age<=180?m[2]:null,age];
+}
+function refresh(i,a4,a6) {
+    let now=time(),hs=i.latest_handshake;
+    if (!i.up||!hs||hs>now||now-hs>180) return;
+    if (a4!=null&&a4<60&&(!i.ipv6||(a6!=null&&a6<60))) return;
+    let owner=read('/tmp/warp/session-'+i.interface+'/owner',32);
+    if (!owner||!match(owner,/^[0-9]+$/)) return;
+    let marker='/tmp/warp/public-refresh-'+i.interface+'-'+owner;
+    let last=int(read(marker,32)||'0');
+    if (last&&last<=now&&now-last<60) return;
+    if (fs.writefile(marker,sprintf('%d',now))==null) return;
+    system('/usr/libexec/warp-health '+i.interface+' refresh </dev/null >/dev/null 2>&1 &');
+}
+function status_for(c,b,iface) {
+    if (!name_ok(iface,15)) return {error:'invalid interface'};
+    if (c.get('network',iface,'proto')!='warp') return {error:'not a WARP interface'};
+    let folder='/tmp/warp/session-'+iface;
+    let session=decode(read(folder+'/session.json',65536));
+    let mode=session?session.account_mode:null;
+    if (mode!='random'&&mode!='custom') mode='fresh';
+    let underlay=c.get('network',iface,'tunlink');
+    let i={interface:iface,account_mode:mode,account_stored:false,up:false,pending:false,available:false,state:'unavailable',
+        internet_ipv4:false,internet_ipv6:false};
+    if (underlay!=null) i.underlay_interface=underlay;
+    let net=b?b.call('network.interface.'+iface,'status',{}):null;
+    if (net&&type(net.up)=='bool'&&type(net.pending)=='bool') {
+        i.up=net.up; i.pending=net.pending; i.available=net.available==true;
+        i.state=i.up?'up':i.pending?'pending':'down';
+        if (type(net.errors)=='array'&&length(net.errors)) {
+            let code=net.errors[0].code;
+            let known=split('INVALID_NAME INVALID_ACCOUNT INVALID_ACCOUNT_MODE INVALID_MTU IPV6_MTU_TOO_SMALL INVALID_KEEPALIVE INVALID_METRIC DEFAULT_ROUTE_METRIC_CONFLICT TRANSPORT_FAILED IPV6_ROUTE_FAILED UNDERLAY_UNAVAILABLE UNDERLAY_REQUIRED INVALID_UNDERLAY UNDERLAY_LOOP INVALID_ENDPOINT DEVICE_EXISTS SESSION_FAILED BAD_SESSION NO_IPV6_ADDRESS CREATE_FAILED SETUP_FAILED ENDPOINT_UNREACHABLE UPDATE_FAILED DEVICE_OWNERSHIP_LOST TOS_REQUIRED',' ');
+            i.error_code=index(known,code)>=0?code:'NETIFD_ERROR';
+            i.error=i.error_code;
+            if (!i.up&&!i.pending) i.state='error';
+        }
+    } else { i.error_code='NETIFD_UNAVAILABLE'; i.error='Network interface status unavailable'; }
+    if (session) {
+        let account=mode=='random'?'/tmp/warp/random-'+iface+'.json':
+            mode=='custom'&&name_ok(session.account,32)?'/etc/warp-reg/accounts/'+session.account+'.json':null;
+        let stored=account?decode(read(account,65536)):null;
+        if (stored&&type(stored.device_id)=='string'&&match(stored.device_id,/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/)&&type(stored.access_token)=='string'&&length(stored.access_token)) {
+            i.account_stored=true; i.device_id_masked=substr(stored.device_id,0,4)+'...'+substr(stored.device_id,-4);
+        }
+        if (mode=='fresh'&&type(session.device_id_masked)=='string'&&match(session.device_id_masked,/^[0-9a-fA-F]{4}[.][.][.][0-9a-fA-F]{4}$/)) {
+            i.account_stored=true; i.device_id_masked=session.device_id_masked;
+        }
+        if (type(session.endpoint)=='string'&&length(session.endpoint)<=64&&match(session.endpoint,/^([0-9.]+|\[[0-9a-fA-F:.]+\]):[0-9]+$/)) i.endpoint=session.endpoint;
+        if (device_ok(session.underlay_device)) i.underlay_device=session.underlay_device;
+        if (type(session.started_at)=='int'&&session.started_at>0&&session.started_at<=time()) i.started_at=session.started_at;
+        if(i.up) for (let family in ['ipv4','ipv6']) {
+            let address=session[family],actual=net[family+'-address'];
+            if(type(address)!='string'||length(address)>45||!match(address,/^[0-9a-fA-F:.]+$/)) continue;
+            if(type(actual)=='array') for(let entry in actual) if(entry.address==address) i[family]=address;
+        }
+    }
+    let h=match(line('/usr/bin/wg show '+iface+' latest-handshakes')||'',/^[^[:space:]]+[[:space:]]+([0-9]+)[[:space:]]*$/);
+    if(h) i.latest_handshake=int(h[1]);
+    let t=match(line('/usr/bin/wg show '+iface+' transfer')||'',/^[^[:space:]]+[[:space:]]+([0-9]+)[[:space:]]+([0-9]+)[[:space:]]*$/);
+    if(t) { i.rx_bytes=t[1];i.tx_bytes=t[2]; }
+    let ep=match(line('/usr/bin/wg show '+iface+' endpoints')||'',/^[^[:space:]]+[[:space:]]+(([0-9.]+|\[[0-9a-fA-F:.]+\]):[0-9]+)[[:space:]]*$/);
+    if(ep&&length(ep[1])<=64) i.endpoint=ep[1];
+    let mark=line('/usr/bin/wg show '+iface+' fwmark');
+    let host=match(i.endpoint||'',/^([0-9.]+):[0-9]+$/);
+    if(host&&mark&&match(mark,/^(0x[0-9a-fA-F]+|[0-9]+)$/)) {
+        let route=match(line('ip -4 route get '+host[1]+' mark '+mark)||'',/[[:space:]]dev[[:space:]]+([A-Za-z0-9_.-]+)/);
+        if(route&&device_ok(route[1])) i.transport_device=route[1];
+    }
+    if(read(folder+'/health-state',64)=='handshake_timeout\n') { i.error_code='HANDSHAKE_TIMEOUT';i.error=i.error_code; }
+    let p4=public_ip(iface,'4'),p6=public_ip(iface,'6');
+    i.public_ipv4=p4[0];i.public_ipv6=p6[0];
+    i.internet_ipv4=p4[0]!=null;i.internet_ipv6=p6[0]!=null;
+    if(i.up) refresh(i,p4[1],p6[1]);
+    return i;
+}
+function main() {
+    if(ARGV[0]=='list') { print('{"status":{"interface":""},"status_all":{}}\n'); return; }
+    if(ARGV[0]!='call'||(ARGV[1]!='status'&&ARGV[1]!='status_all')) {print('{}\n');return;}
+    let req=fs.stdin.read(4097);
+    if(type(req)!='string'||length(req)>4096||!decode(req)) {print('{"error":"invalid request"}\n');return;}
+    let c=cursor(),b=connect();
+    if(ARGV[1]=='status') {printf('%J\n',status_for(c,b,decode(req).interface));return;}
+    let items=[];
+    c.foreach('network','interface',function(s) {
+        if(s.proto=='warp'&&name_ok(s['.name'],15)) push(items,status_for(c,b,s['.name']));
+    });
+    sort(items,function(a,b){return a.interface<b.interface?-1:a.interface>b.interface?1:0;});
+    printf('%J\n',{interfaces:items});
+}
+try { main(); } catch(e) { print('{"error":"status unavailable"}\n'); }

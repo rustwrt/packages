@@ -2,7 +2,7 @@
 # Experimental WARP netifd protocol. Not yet a production package.
 [ -n "$INCLUDE_ONLY" ] || {
  . /lib/functions.sh
- . ../netifd-proto.sh
+ . /lib/netifd/netifd-proto.sh
  init_proto "$@"
 }
 proto_warp_init_config() {
@@ -80,7 +80,7 @@ warpTransportRelease() {
    ip -6 rule del priority "$((15000 + transportPriority))" oif "$config" lookup "$transportId" 2>/dev/null || :
    ip -6 route flush table "$transportId" 2>/dev/null || :
   fi
-  rm -f "$transportDir/ipv6-active" "$transportDir/active" "$transportDir/owner"
+  rm -f "$transportDir/ipv6-active" "$transportDir/active" "$transportDir/default-metric" "$transportDir/owner"
   rmdir "$transportDir" 2>/dev/null || return 1
  done
 }
@@ -147,6 +147,39 @@ warpTransportSetup() {
  resolvedRoute="$(ip -4 route get "$transportDestination" mark "$transportId")" || return 1
  printf '%s\n' "$resolvedRoute" | awk -v expectedDev="$underlayDev" -v expectedTable="$transportId" '{for (i=1;i<NF;i++) {if ($i=="dev" && $(i+1)==expectedDev) devOk=1; if ($i=="table" && $(i+1)==expectedTable) tableOk=1}} END {exit !(devOk && tableOk)}'
 }
+# Reserve unique default-route metrics for concurrent WARP sessions.
+warpChooseDefaultMetric() (
+ local preferred="$1" id="$2" metrics route4 route6 f candidate
+ exec 9>/tmp/warp/.default-route.lock || return 1
+ flock -x -w 15 9 || return 1
+ route4="$(ip -4 route show table main default)" || return 1
+ route6="$(ip -6 route show table main default)" || return 1
+ metrics="$(printf '%s\n%s\n' "$route4" "$route6" | awk '/^default / {m=0; for(i=1;i<NF;i++) if($i=="metric") m=$(i+1); print m}')"
+ for f in /tmp/warp/transport-*/default-metric; do
+  [ -f "$f" ] || continue
+  metrics="$metrics
+$(cat "$f")"
+ done
+ if [ "$preferred" -gt 0 ]; then
+  candidate="$preferred"
+  if printf '%s\n' "$metrics" | grep -qx "$candidate"; then return 1; fi
+ else
+  candidate="$id"
+  while printf '%s\n' "$metrics" | grep -qx "$candidate"; do
+   candidate=$((candidate+1000))
+   [ "$candidate" -lt 2147483647 ] || return 1
+  done
+ fi
+ printf '%s\n' "$candidate" > "/tmp/warp/transport-$id/default-metric" || return 1
+ printf '%s\n' "$candidate"
+)
+# Avoid rapid retry loops while DHCP is starting.
+warpRetryUnderlay() {
+ proto_notify_error "$1" UNDERLAY_UNAVAILABLE
+ sleep 5
+ proto_setup_failed "$1"
+ return 1
+}
 warpIPv6Setup() {
  local config="$1" id="$2" dir="/tmp/warp/transport-$2"
  [ -f "$dir/owner" ] || return 1
@@ -201,7 +234,7 @@ warp_abort_setup() {
 }
 proto_warp_setup() {
  local config="$1" account endpoint_override tunlink underlay_dev underlay_proto mtu keepalive defaultroute ipv6_enabled dns
- local sessionCommand transportId
+ local sessionCommand transportId routeMetric preferredMetric
  local ipv4 ipv6 peer endpoint private_key_file destination metadata allowed created warp_child
  underlay_dev=''; created=0; warp_child=''
  warp_name_ok "$config" || { proto_notify_error "$config" INVALID_NAME; proto_block_restart "$config"; return 1; }
@@ -215,6 +248,10 @@ proto_warp_setup() {
  config_get mtu "$config" mtu 1280
  config_get keepalive "$config" keepalive 25
  config_get_bool defaultroute "$config" defaultroute 1
+ config_get preferredMetric "$config" metric 0
+ preferredMetric="${preferredMetric:-0}"
+ case "$preferredMetric" in *[!0-9]*|0[0-9]*) proto_notify_error "$config" INVALID_METRIC; proto_block_restart "$config"; return 1;; esac
+ [ "${#preferredMetric}" -le 10 ] && [ "$preferredMetric" -le 2147483647 ] || { proto_notify_error "$config" INVALID_METRIC; proto_block_restart "$config"; return 1; }
  config_get_bool ipv6_enabled "$config" ipv6 1
  config_get dns "$config" dns
  if [ -z "$dns" ]; then
@@ -233,8 +270,7 @@ proto_warp_setup() {
   . /lib/functions/network.sh
   network_flush_cache
   if ! warp_find_default_underlay; then
-    proto_notify_error "$config" UNDERLAY_UNAVAILABLE
-    proto_setup_failed "$config"
+    warpRetryUnderlay "$config"
     return 1
   fi
  fi
@@ -248,10 +284,9 @@ proto_warp_setup() {
   . /lib/functions/network.sh
   network_flush_cache
   # Register the logical underlay before making any API request so netifd can track WAN loss.
-  if ! proto_add_host_dependency "$config" '' "$tunlink"; then proto_notify_error "$config" UNDERLAY_UNAVAILABLE; proto_setup_failed "$config"; return 1; fi
+  if ! proto_add_host_dependency "$config" '' "$tunlink"; then warpRetryUnderlay "$config"; return 1; fi
   if ! network_is_up "$tunlink" || ! network_get_device underlay_dev "$tunlink" || ! network_get_protocol underlay_proto "$tunlink"; then
-   proto_notify_error "$config" UNDERLAY_UNAVAILABLE
-   proto_setup_failed "$config"
+   warpRetryUnderlay "$config"
    return 1
   fi
   [ "$underlay_proto" != warp ] || { proto_notify_error "$config" UNDERLAY_LOOP; proto_block_restart "$config"; return 1; }
@@ -305,8 +340,14 @@ proto_warp_setup() {
   proto_add_ipv6_route "::" 0 "" "" "" "" "$transportId"
  fi
  if [ "$defaultroute" = 1 ]; then
-  proto_add_ipv4_route '0.0.0.0' 0
-  [ "$ipv6_enabled" = 1 ] && proto_add_ipv6_route '::' 0
+  if ! routeMetric="$(warpChooseDefaultMetric "$preferredMetric" "$transportId")"; then
+   warp_cleanup "$config" "$account" "$created"
+   proto_notify_error "$config" DEFAULT_ROUTE_METRIC_CONFLICT
+   proto_block_restart "$config"
+   return 1
+  fi
+  proto_add_ipv4_route '0.0.0.0' 0 '' '' "$routeMetric"
+  [ "$ipv6_enabled" != 1 ] || proto_add_ipv6_route '::' 0 '' "$routeMetric"
  fi
  for server in $dns; do proto_add_dns_server "$server"; done
  if ! proto_send_update "$config"; then

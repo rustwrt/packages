@@ -1,0 +1,14 @@
+{
+	"luci-app-netbraid": {
+		"description": "Read NetBraid state and configure NetBraid",
+		"read": {
+			"ubus": {
+				"luci.netbraid": [ "status", "interfaces", "detection", "portal", "diagnostics", "validate" ]
+			},
+			"uci": [ "netbraid", "network" ]
+		},
+		"write": {
+			"uci": [ "netbraid" ]
+		}
+	}
+}

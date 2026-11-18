@@ -1,0 +1,4 @@
+#!/usr/bin/ucode
+'use strict';
+
+import '/usr/lib/netbraid/daemon.uc';

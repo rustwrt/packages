@@ -6,8 +6,9 @@
       "revision": "83d719957c7d24bc969767a96043c761b729981a",
       "directories": [
         "net/cloudflare-warp",
-        "luci/luci-proto-warp"
-      ]
+        "luci/luci-app-warp"
+      ],
+      "migration_note": "Local monorepo migration from rustwrt/luci-proto-warp development checkout; original revision records historical origin, not a verified release commit."
     }
   }
 }

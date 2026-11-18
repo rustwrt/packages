@@ -1,0 +1,6 @@
+#!/usr/bin/ucode
+'use strict';
+
+import { cli } from '/usr/lib/netbraid/runtime.uc';
+
+exit(cli(ARGV));

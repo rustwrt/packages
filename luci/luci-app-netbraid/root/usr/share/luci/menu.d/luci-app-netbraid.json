@@ -1,0 +1,40 @@
+{
+	"admin/network/netbraid": {
+		"title": "NetBraid",
+		"order": 65,
+		"action": { "type": "firstchild" },
+		"depends": { "acl": [ "luci-app-netbraid" ], "uci": { "netbraid": true } }
+	},
+	"admin/network/netbraid/overview": {
+		"title": "Overview", "order": 10,
+		"action": { "type": "view", "path": "netbraid/overview" }
+	},
+	"admin/network/netbraid/interfaces": {
+		"title": "Interfaces", "order": 20,
+		"action": { "type": "view", "path": "netbraid/interfaces" }
+	},
+	"admin/network/netbraid/members": {
+		"title": "Members", "order": 30,
+		"action": { "type": "view", "path": "netbraid/members" }
+	},
+	"admin/network/netbraid/policies": {
+		"title": "Policies", "order": 40,
+		"action": { "type": "view", "path": "netbraid/policies" }
+	},
+	"admin/network/netbraid/rules": {
+		"title": "Rules", "order": 50,
+		"action": { "type": "view", "path": "netbraid/rules" }
+	},
+	"admin/network/netbraid/diagnostics": {
+		"title": "Diagnostics", "order": 60,
+		"action": { "type": "view", "path": "netbraid/diagnostics" }
+	},
+	"admin/network/netbraid/detection": {
+		"title": "Detection", "order": 70,
+		"action": { "type": "view", "path": "netbraid/detection" }
+	},
+	"admin/network/netbraid/captive-portal": {
+		"title": "Captive Portal", "order": 80,
+		"action": { "type": "view", "path": "netbraid/captive-portal" }
+	}
+}

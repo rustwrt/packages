@@ -1,0 +1,2 @@
+config routebraid 'main'
+	option enabled '0'

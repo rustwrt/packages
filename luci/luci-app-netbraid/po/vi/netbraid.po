@@ -1,0 +1,353 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: NetBraid 0.1.0\n"
+"PO-Revision-Date: 2026-11-17 15:00+0000\n"
+"Last-Translator: NetBraid contributors\n"
+"Language-Team: Vietnamese\n"
+"Language: vi\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "NetBraid"
+msgstr "NetBraid"
+
+msgid "Overview"
+msgstr "Tổng quan"
+
+msgid "NetBraid Overview"
+msgstr "Tổng quan NetBraid"
+
+msgid "Interfaces"
+msgstr "Giao diện mạng"
+
+msgid "Members"
+msgstr "Thành viên"
+
+msgid "Policies"
+msgstr "Chính sách"
+
+msgid "Rules"
+msgstr "Quy tắc"
+
+msgid "Diagnostics"
+msgstr "Chẩn đoán"
+
+msgid "Detection"
+msgstr "Phát hiện"
+
+msgid "Captive Portal"
+msgstr "Cổng chào"
+
+msgid "Not reported"
+msgstr "Chưa được báo cáo"
+
+msgid "Yes"
+msgstr "Có"
+
+msgid "No"
+msgstr "Không"
+
+msgid "No records reported."
+msgstr "Chưa có bản ghi được báo cáo."
+
+msgid "Additional nested records omitted."
+msgstr "Các bản ghi lồng sâu hơn đã được lược bỏ."
+
+msgid "Only the first 100 records are shown."
+msgstr "Chỉ hiển thị 100 bản ghi đầu tiên."
+
+msgid "No status was returned by luci.netbraid."
+msgstr "luci.netbraid không trả về trạng thái."
+
+msgid "The backend rejected the request."
+msgstr "Dịch vụ nền từ chối yêu cầu."
+
+msgid "Status unavailable"
+msgstr "Không lấy được trạng thái"
+
+msgid "Check that netbraid and rpcd are running and your account has NetBraid read permission, then refresh."
+msgstr "Kiểm tra netbraid và rpcd đang chạy, tài khoản có quyền đọc NetBraid, rồi làm mới."
+
+msgid "Refresh status"
+msgstr "Làm mới trạng thái"
+
+msgid "Routing preview only"
+msgstr "Chỉ xem trước định tuyến"
+
+msgid "Save & Apply stores UCI configuration. Safe routing activation is not implemented; saved members, policies and rules are not proof of active forwarding."
+msgstr "Lưu & Áp dụng lưu cấu hình UCI. Chưa có cơ chế kích hoạt định tuyến an toàn; thành viên, chính sách và quy tắc đã lưu không chứng minh lưu lượng đang được chuyển tiếp theo cấu hình."
+
+msgid "Add configuration"
+msgstr "Thêm cấu hình"
+
+msgid "Use up to 32 letters, digits or underscores, starting with a letter or underscore."
+msgstr "Dùng tối đa 32 chữ cái, chữ số hoặc dấu gạch dưới, bắt đầu bằng chữ cái hoặc dấu gạch dưới."
+
+msgid "This section name is already in use."
+msgstr "Tên mục này đã được sử dụng."
+
+msgid "Address family"
+msgstr "Họ địa chỉ"
+
+msgid "IPv4 and IPv6"
+msgstr "IPv4 và IPv6"
+
+msgid "IPv4"
+msgstr "IPv4"
+
+msgid "IPv6"
+msgstr "IPv6"
+
+msgid "Select an existing configuration section."
+msgstr "Chọn một mục cấu hình hiện có."
+
+msgid "Configure the control plane and inspect the latest reported state."
+msgstr "Cấu hình bộ điều khiển và kiểm tra trạng thái báo cáo mới nhất."
+
+msgid "General settings"
+msgstr "Thiết lập chung"
+
+msgid "Enable control plane"
+msgstr "Bật bộ điều khiển"
+
+msgid "Enable health checks"
+msgstr "Bật kiểm tra kết nối"
+
+msgid "Include router-originated traffic in preview"
+msgstr "Đưa lưu lượng từ bộ định tuyến vào bản xem trước"
+
+msgid "Routing mark shift"
+msgstr "Độ dịch bit đánh dấu định tuyến"
+
+msgid "Reserved mark bits must not overlap WARP or other routing services."
+msgstr "Các bit đánh dấu dành riêng không được chồng lấn với WARP hoặc dịch vụ định tuyến khác."
+
+msgid "Routing table base"
+msgstr "Số cơ sở bảng định tuyến"
+
+msgid "Routing rule priority base"
+msgstr "Số cơ sở ưu tiên quy tắc định tuyến"
+
+msgid "Log level"
+msgstr "Mức nhật ký"
+
+msgid "Reported runtime state"
+msgstr "Trạng thái thực thi được báo cáo"
+
+msgid "Interfaces are discovered from netifd. Health profiles below can be assigned to members. No virtual interface is created."
+msgstr "Giao diện được khám phá từ netifd. Có thể gán các hồ sơ kiểm tra kết nối bên dưới cho thành viên. Không tạo giao diện ảo."
+
+msgid "Health profiles"
+msgstr "Hồ sơ kiểm tra kết nối"
+
+msgid "Enabled"
+msgstr "Bật"
+
+msgid "Probe targets"
+msgstr "Đích thăm dò"
+
+msgid "Interval (seconds)"
+msgstr "Chu kỳ (giây)"
+
+msgid "Timeout (seconds)"
+msgstr "Thời gian chờ (giây)"
+
+msgid "Failure threshold"
+msgstr "Ngưỡng thất bại"
+
+msgid "Recovery threshold"
+msgstr "Ngưỡng phục hồi"
+
+msgid "Recovery delay (seconds)"
+msgstr "Độ trễ phục hồi (giây)"
+
+msgid "Minimum successful targets"
+msgstr "Số đích thành công tối thiểu"
+
+msgid "Minimum successful targets cannot exceed the number of probe targets."
+msgstr "Số đích thành công tối thiểu không được vượt quá số đích thăm dò."
+
+msgid "Discovered interfaces"
+msgstr "Giao diện đã khám phá"
+
+msgid "A member links a logical network interface to a priority, weight and optional health profile. Lower priorities are preferred; weights divide new connections, not bandwidth."
+msgstr "Thành viên liên kết giao diện mạng logic với mức ưu tiên, trọng số và hồ sơ kiểm tra kết nối tùy chọn. Ưu tiên số nhỏ được chọn trước; trọng số phân chia kết nối mới, không phải băng thông."
+
+msgid "Configured members"
+msgstr "Thành viên đã cấu hình"
+
+msgid "Logical interface"
+msgstr "Giao diện logic"
+
+msgid "Select an existing logical network interface."
+msgstr "Chọn một giao diện mạng logic hiện có."
+
+msgid "Priority"
+msgstr "Mức ưu tiên"
+
+msgid "Weight"
+msgstr "Trọng số"
+
+msgid "Health profile"
+msgstr "Hồ sơ kiểm tra kết nối"
+
+msgid "Select members and a deterministic connection classifier. One member represents a single path; different member priorities describe failover and equal priorities describe weighted distribution in the preview."
+msgstr "Chọn thành viên và bộ phân loại kết nối xác định. Một thành viên biểu thị một đường truyền; các mức ưu tiên khác nhau mô tả dự phòng, cùng mức ưu tiên mô tả phân phối theo trọng số trong bản xem trước."
+
+msgid "Configured policies"
+msgstr "Chính sách đã cấu hình"
+
+msgid "Connection classifier"
+msgstr "Bộ phân loại kết nối"
+
+msgid "Source address"
+msgstr "Địa chỉ nguồn"
+
+msgid "Destination address"
+msgstr "Địa chỉ đích"
+
+msgid "Source and destination addresses"
+msgstr "Địa chỉ nguồn và đích"
+
+msgid "Source port"
+msgstr "Cổng nguồn"
+
+msgid "Destination port"
+msgstr "Cổng đích"
+
+msgid "Source and destination ports"
+msgstr "Cổng nguồn và đích"
+
+msgid "Source address and port"
+msgstr "Địa chỉ và cổng nguồn"
+
+msgid "Destination address and port"
+msgstr "Địa chỉ và cổng đích"
+
+msgid "Both addresses and ports"
+msgstr "Cả địa chỉ và cổng nguồn, đích"
+
+msgid "Read-only diagnostics and validation inspect saved configuration. Save pending form edits before validating. No commands or routing changes are executed by this page."
+msgstr "Chẩn đoán và xác thực chỉ đọc kiểm tra cấu hình đã lưu. Lưu các thay đổi biểu mẫu trước khi xác thực. Trang này không thực thi lệnh hoặc thay đổi định tuyến."
+
+msgid "Saved configuration validation"
+msgstr "Xác thực cấu hình đã lưu"
+
+msgid "Runtime diagnostics"
+msgstr "Chẩn đoán thực thi"
+
+msgid "Configure optional, evidence-based device classification. Sensors are independent, bounded and read-only; classification states are Normal, Suspected or Confirmed, with Confirmed reserved for strong topology evidence. TTL and hop-limit signals are heuristics, not proof. No sensor performs full-packet capture and none blocks traffic by default."
+msgstr "Cấu hình phân loại thiết bị tùy chọn dựa trên bằng chứng. Cảm biến độc lập, có giới hạn và chỉ đọc; các trạng thái là Bình thường, Nghi ngờ hoặc Xác nhận, chỉ Xác nhận khi có bằng chứng cấu trúc mạng mạnh. TTL và hop-limit chỉ mang tính suy đoán. Không cảm biến nào bắt toàn bộ gói tin hoặc mặc định chặn lưu lượng."
+
+msgid "Sensor settings"
+msgstr "Thiết lập cảm biến"
+
+msgid "Enable detection"
+msgstr "Bật phát hiện"
+
+msgid "Sampling interval (seconds)"
+msgstr "Chu kỳ lấy mẫu (giây)"
+
+msgid "TTL and hop-limit distribution"
+msgstr "Phân bố TTL và hop-limit"
+
+msgid "IPv4 TTL and IPv6 hop-limit observation. Heuristic only; NAT hides real values."
+msgstr "Quan sát TTL IPv4 và hop-limit IPv6. Chỉ mang tính suy đoán; NAT che khuất giá trị thực."
+
+msgid "DHCP fingerprints"
+msgstr "Dấu vân tay DHCP"
+
+msgid "Only observable DHCP traffic is used. Devices behind NAT are usually invisible."
+msgstr "Chỉ dùng lưu lượng DHCP quan sát được. Thiết bị phía sau NAT thường không nhìn thấy."
+
+msgid "Connection aggregates"
+msgstr "Số liệu kết nối tổng hợp"
+
+msgid "Aggregated connection counts. Connection count is not a device count."
+msgstr "Tổng hợp số kết nối. Số kết nối không phải số thiết bị."
+
+msgid "MAC, ARP and NDP"
+msgstr "MAC, ARP và NDP"
+
+msgid "Neighbor evidence. A MAC address alone is not proof of a device."
+msgstr "Bằng chứng từ bảng láng giềng. Riêng địa chỉ MAC không đủ chứng minh thiết bị."
+
+msgid "Sampled TCP SYN fingerprints"
+msgstr "Dấu vân tay TCP SYN lấy mẫu"
+
+msgid "Optional and only where the target platform can sample efficiently. Requires explicit review in the backend."
+msgstr "Tùy chọn, chỉ dùng khi nền tảng đích lấy mẫu hiệu quả. Cần được kiểm tra rõ ràng ở dịch vụ nền."
+
+msgid "Wi-Fi association data"
+msgstr "Dữ liệu liên kết Wi-Fi"
+
+msgid "Used only where the wireless driver exposes association and topology data."
+msgstr "Chỉ dùng khi trình điều khiển không dây cung cấp dữ liệu liên kết và cấu trúc mạng."
+
+msgid "Reported sensor state"
+msgstr "Trạng thái cảm biến được báo cáo"
+
+msgid "Prepare an optional guest welcome page and session settings. The portal is disabled by default. Saving or enabling these settings does not activate redirects or authorize clients; enforcement is unavailable in this preview."
+msgstr "Chuẩn bị trang chào khách tùy chọn và thiết lập phiên. Cổng chào mặc định tắt. Lưu hoặc bật các thiết lập không kích hoạt chuyển hướng hay cấp quyền cho máy khách; bản xem trước chưa hỗ trợ thực thi."
+
+msgid "Portal settings"
+msgstr "Thiết lập cổng chào"
+
+msgid "Request portal service"
+msgstr "Yêu cầu dịch vụ cổng chào"
+
+msgid "Guest interface"
+msgstr "Giao diện khách"
+
+msgid "Guest network name"
+msgstr "Tên mạng khách"
+
+msgid "Session timeout (seconds)"
+msgstr "Thời hạn phiên (giây)"
+
+msgid "Welcome title"
+msgstr "Tiêu đề chào mừng"
+
+msgid "Terms of access"
+msgstr "Điều khoản truy cập"
+
+msgid "Portal preview only. No redirect activation, guest authorization or session enforcement is available. Router administration, DHCP and DNS must remain reachable."
+msgstr "Chỉ xem trước cổng chào. Chưa hỗ trợ kích hoạt chuyển hướng, cấp quyền khách hoặc thực thi phiên. Phải duy trì truy cập quản trị bộ định tuyến, DHCP và DNS."
+
+msgid "Reported portal state"
+msgstr "Trạng thái cổng chào được báo cáo"
+
+msgid "Rules steer matching traffic to a policy. They are stored configuration and are not enforced: no firewall, route, mark or conntrack change is applied by this page."
+msgstr "Quy tắc đưa lưu lượng phù hợp đến chính sách. Đây là cấu hình được lưu và chưa thực thi: trang này không thay đổi tường lửa, định tuyến, đánh dấu hoặc conntrack."
+
+msgid "Configured rules"
+msgstr "Quy tắc đã cấu hình"
+
+msgid "Target policy"
+msgstr "Chính sách đích"
+
+msgid "Lower values are evaluated first."
+msgstr "Giá trị nhỏ được xét trước."
+
+msgid "Protocol"
+msgstr "Giao thức"
+
+msgid "Source address or subnet"
+msgstr "Địa chỉ hoặc mạng con nguồn"
+
+msgid "Destination address or subnet"
+msgstr "Địa chỉ hoặc mạng con đích"
+
+msgid "Source port or range"
+msgstr "Cổng hoặc dải cổng nguồn"
+
+msgid "Destination port or range"
+msgstr "Cổng hoặc dải cổng đích"
+
+msgid "Ingress interface"
+msgstr "Giao diện đầu vào"
+
+msgid "Rules are preview-only. They require a backend that parses the rule section; on an older backend the whole configuration may be reported invalid."
+msgstr "Quy tắc chỉ để xem trước. Cần dịch vụ nền có khả năng đọc mục rule; với bản cũ, toàn bộ cấu hình có thể bị báo không hợp lệ."
