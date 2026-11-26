@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+packages='sponsorblocktv ucode ucode-mod-uloop ucode-mod-uclient ucode-mod-socket ucode-mod-struct ucode-mod-digest ucode-mod-fs ucode-mod-ubus ca-bundle python3 python3-zeroconf python3-requests python3-urllib3 python3-certifi python3-idna python3-chardet'
+if command -v opkg >/dev/null; then
+    installed=$(awk '/^Package: / {p=$2} /^Status: / && $NF=="installed" {print p}' /usr/lib/opkg/status)
+elif command -v apk >/dev/null; then
+    installed=$(apk info)
+else
+    echo 'No supported package manager' >&2; exit 1
+fi
+missing=0
+for pkg in $packages; do
+    if ! printf '%s\n' "$installed" | grep -Fxq "$pkg"; then
+        echo "MISSING $pkg"; missing=1
+    fi
+done
+if [ "$missing" = 0 ]; then
+    ucode -e 'import * as u from "/usr/lib/sponsorblocktv/util.uc"; u.info("deps", "runtime import verification ok")' || { echo 'Runtime import verification failed' >&2; exit 1; }
+    result=$(/usr/sbin/sponsorblocktv-cast-bridge self-test) || { echo "Private Python import verification failed: $result" >&2; exit 1; }
+fi
+exit 0

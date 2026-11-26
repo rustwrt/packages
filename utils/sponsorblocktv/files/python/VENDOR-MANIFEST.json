@@ -1,0 +1,26 @@
+[
+  {
+    "package": "python3-casttube_0.2.1-r2_all.ipk",
+    "sha256": "f5b32ca7f1de7c0c3215b9ac70a63893e1b9d3bcb09854c96ec59a92ada2bbbd",
+    "files": 7,
+    "omitted": [
+      "casttube-0.2.1.dist-info/RECORD"
+    ]
+  },
+  {
+    "package": "python3-protobuf_6.33.5-r2_all.ipk",
+    "sha256": "6bd2571b463ed6b07f1fd3fbc8a043d8cf967a32b78c26e401b99dbbb86c06a1",
+    "files": 57,
+    "omitted": [
+      "protobuf-6.33.5.dist-info/RECORD"
+    ]
+  },
+  {
+    "package": "python3-pychromecast_14.0.10-r2_all.ipk",
+    "sha256": "fdebd1f814eb44cd0fe03e516a60ac7ad5578687226d0fd4f278ba9b09bbc940",
+    "files": 40,
+    "omitted": [
+      "pychromecast-14.0.10.dist-info/RECORD"
+    ]
+  }
+]

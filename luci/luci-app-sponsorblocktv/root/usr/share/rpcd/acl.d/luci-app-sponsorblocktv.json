@@ -1,0 +1,75 @@
+{
+  "luci-app-sponsorblocktv": {
+    "description": "Grant access to SponsorBlockTV configuration and control",
+    "read": {
+      "uci": [
+        "sponsorblocktv"
+      ],
+      "file": {
+        "/usr/sbin/sponsorblocktv-pair --list *": [
+          "exec"
+        ],
+        "/etc/init.d/sponsorblocktv running": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-deps": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-discover": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-install-deps status": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-discover --scan *": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-discover --status *": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-policy get *": [
+          "exec"
+        ]
+      },
+      "ubus": {
+        "sponsorblocktv.live": [
+          "status"
+        ]
+      }
+    },
+    "write": {
+      "uci": [
+        "sponsorblocktv"
+      ],
+      "file": {
+        "/etc/init.d/sponsorblocktv restart": [
+          "exec"
+        ],
+        "/etc/init.d/sponsorblocktv stop": [
+          "exec"
+        ],
+        "/etc/init.d/sponsorblocktv start": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-pair --code *": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-discover --add *": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-install-deps core": [
+          "exec"
+        ],
+        "/usr/sbin/sponsorblocktv-policy set *": [
+          "exec"
+        ]
+      },
+      "ubus": {
+        "sponsorblocktv.live": [
+          "control",
+          "policy"
+        ]
+      }
+    }
+  }
+}

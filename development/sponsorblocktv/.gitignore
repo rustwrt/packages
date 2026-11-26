@@ -1,0 +1,5 @@
+# Local reference trees and diagnostics; common rules are in the root .gitignore.
+/upstream/
+/experiments/
+/backup/
+/uc.out

@@ -1,0 +1,45 @@
+'use strict';
+import * as c from './lib/config.uc';
+import {YtLoungeApi} from './lib/lounge.uc';
+import {command} from './lib/live.uc';
+import * as util from './lib/util.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let quoted="sponsorblocktv.main=sponsorblocktv\nsponsorblocktv.@device[0]=device\nsponsorblocktv.@device[0].screen_id='fixture-id'\nsponsorblocktv.@device[0].name='Living room'\\''s TV'\n";
+check(c.build_config(c.parse_uci_show(quoted)).devices[0].name=="Living room's TV",'UCI apostrophe');
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'fixture'});
+a._sid='s';a._gsession='g';a._subscribe_active=true;
+a._process_event('nowPlaying',[{}]);
+check(!a._screen_confirmed,'empty event not screen proof');
+a._process_event('nowPlaying',[{videoId:'abcdefghijk',state:1,currentTime:10,duration:100}]);
+a._playback_sample_ms=util.monotonic_ms()-10000;
+let sample=a._revisions.position;
+a._process_event('onStateChange',[{state:2}]);
+check(a._playback_state.currentTime>=19.9 && a._playback_state.currentTime<=20.2,'partial pause preserves projected position');
+check(sample==a._revisions.position,'partial event not fresh position evidence');
+a._process_event('onPlaybackSpeedChanged',[{playbackSpeed:'invalid'}]);
+check(!a.speed_known,'invalid speed ignored');
+let old=[],results=[];
+a._send_command=(n,p,ok,err)=>push(old,ok);
+a._command('getVolume',{},(ok)=>push(results,ok));
+a._connection_lost();
+check(length(results)==1 && !results[0],'inflight fails once on disconnect');
+a._sid='new';a._gsession='new';a._subscribe_active=true;
+a._command('getVolume',{},(ok)=>push(results,ok));
+old[0](true);
+check(length(results)==1 && a._command_mutex,'old callback isolated');
+old[1](true);check(length(results)==2 && results[1] && !a._command_mutex,'new callback completes');
+a._process_event('nowPlaying',[{videoId:'abcdefghijk',state:1,currentTime:10,duration:100}]);
+let l={lounge:a,phase:'connected',_current_state:a._playback_state,_time_start:util.monotonic_ms()};
+a._command=(n,p,ok,err,guard)=>{if(ok)ok(!guard || guard());};
+check(command(l,'play',0,'').accepted && l.command_pending,'old playback state cannot confirm command');
+a._process_event('onVolumeChanged',[{volume:'25',muted:'false'}]);
+u.timer(300,()=>{
+    check(l.command_pending,'unrelated event cannot confirm');
+    a._process_event('nowPlaying',[{state:1,currentTime:10}]);
+});
+u.timer(650,()=>{
+    check(!l.command_pending && l.command_status=='sent','matching new playback event confirms');
+    print('UCI quoting, empty events, partial playback, stale callbacks and fresh confirmation OK\n');u.end();
+});
+u.run();

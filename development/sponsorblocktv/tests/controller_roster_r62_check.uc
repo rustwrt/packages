@@ -1,0 +1,42 @@
+'use strict';
+import {YtLoungeApi} from './lib/lounge.uc';
+import {snapshot,command} from './lib/live.uc';
+import * as util from './lib/util.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'token'});
+a._sid='sid';a._gsession='gs';a._subscribe_active=true;
+let l={lounge:a,phase:'connected',public_id:'fixture',_current_state:{videoId:'abcdefghijk',state:1,currentTime:5,duration:60},_time_start:util.monotonic_ms()};
+let screen={type:'LOUNGE_SCREEN',name:'TV',id:'screen'},self={type:'REMOTE_CONTROL',name:'SponsorBlockTV',id:a.device_id},phone={type:'REMOTE_CONTROL',name:'Phone',id:'phone'},phone2={type:'REMOTE_CONTROL',name:'Phone',id:'phone2'};
+function roster(devices,encoded){a._process_event('loungeStatus',[{devices:encoded?sprintf('%J',devices):devices}]);}
+check(snapshot(l).controller_count==null,'not reported is unknown');
+roster([screen,self,phone,phone],true);
+let snap=snapshot(l);
+check(snap.controller_count==2 && snap.controllers[0].self && !snap.controllers[1].self,'screen excluded, exact self identity, dedup');
+check(snap.controllers[1].id==null && !length(snap.controller_changes),'IDs private and initial roster not join');
+roster([phone2,screen,self,phone],false);
+check(snapshot(l).controller_count==3 && a.controller_changes[0].kind=='joined','same-name independent IDs');
+roster([screen,self,phone2],false);
+check(length(a.controller_changes)==2 && a.controller_changes[1].kind=='left','departure detected');
+a._process_event('loungeStatus',[{}]);
+a._process_event('loungeStatus',[{devices:'malformed'}]);
+roster([screen,null],false);
+check(snapshot(l).controller_count==2 && length(a.controller_changes)==2,'invalid snapshots cannot fabricate departure');
+roster([screen,self,{type:'REMOTE_CONTROL',name:'Unknown'}],false);
+check(snapshot(l).controller_count==2 && length(a.controller_changes)==2,'missing ID suppresses change attribution');
+roster([screen,self,phone],false);
+check(length(a.controller_changes)==2,'uncertain baseline not diffed');
+for(let i=0;i<10;i++)roster([screen,self,{type:'REMOTE_CONTROL',id:'remote-'+i,name:'Remote'}],false);
+check(length(a.controller_changes)==8,'bounded history');
+a._process_event('nowPlaying',[{videoId:'abcdefghijk',state:1,currentTime:5,duration:60}]);
+a._send_command=(n,p,cb)=>cb(true);
+check(command(l,'pause',0,'').accepted,'manual command accepted with multiple remotes');
+a._process_event('onStateChange',[{state:1,currentTime:6}]);
+u.timer(5300,()=>{
+    let s=snapshot(l);
+    check(l.command_status=='unconfirmed' && s.controller_conflict?.action=='pause' && s.controller_conflict.count==1,'fresh contrary state flags possible contention');
+    a._connection_lost();
+    check(snapshot(l).controller_count==null && !length(a.controller_changes) && a.controller_conflict==null,'disconnect clears roster and history');
+    print('Remote roster, privacy, join/leave, uncertain data and possible contention OK\n');u.end();
+});
+u.run();

@@ -1,0 +1,24 @@
+'use strict';
+import {DeviceListener} from './lib/runtime.uc';
+import {SponsorBlockClient} from './lib/sponsorblock.uc';
+import {snapshot,command} from './lib/live.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let id='abcdefghijk',cfg={devices:[],skip_categories:['sponsor']};
+let l=DeviceListener(SponsorBlockClient(cfg),cfg,{screen_id:'fixture',name:'TV',statistics:true},false),a=l.lounge;
+l.metadata_id=id;a._sid='s';a._gsession='g';a._subscribe_active=true;l.phase='connected';
+l.api_helper._segment_cache.set(id,[],false);
+let calls=[],done=[];
+a._send_command=(n,p,cb)=>{push(calls,[n,{...p}]);push(done,cb);};
+a._process_event('onVolumeChanged',[{volume:40,muted:false}]);
+a._process_event('nowPlaying',[{videoId:id,state:1,currentTime:12,duration:100}]);
+check(!length(snapshot(l).segments) && !command(l,'skip_segment',0,'').accepted,'no segment cannot skip');
+check(!length(calls),'no segment mute command');
+a._process_event('adPlaying',[{adVideoId:'ad',isSkipEnabled:false}]);
+check(length(calls)==1 && calls[0][0]=='setVolume' && calls[0][1].muted=='true','native ad mute retained');
+a._process_event('onVolumeChanged',[{volume:40,muted:true}]);done[0](true);
+check(l.segment_stats.ad_mutes==1,'native ad mute counted');
+a._process_event('onAdStateChange',[{adState:1082}]);
+check(calls[1][1].muted=='false','native ad restores sound');
+a._process_event('onVolumeChanged',[{volume:40,muted:false}]);done[1](true);
+a._connection_lost();print('PASS: native ad mute preserved\n');

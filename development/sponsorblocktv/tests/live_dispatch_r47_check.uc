@@ -1,0 +1,36 @@
+'use strict';
+import {YtLoungeApi} from './lib/lounge.uc';
+import {command,snapshot} from './lib/live.uc';
+import {SponsorBlockClient} from './lib/sponsorblock.uc';
+import * as util from './lib/util.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'token'});
+a._sid='s';a._gsession='g';a._subscribe_active=true;
+let c=SponsorBlockClient({skip_categories:['sponsor'],devices:[]});
+let l={phase:'connected',lounge:a,api_helper:c,_time_start:util.monotonic_ms()};
+a.on_state_change=(st)=>{l._current_state={...st};l._time_start=util.monotonic_ms();};
+a._process_event('nowPlaying',[{videoId:'abcdefghijk',state:1,currentTime:15,duration:100}]);
+let count=0;c.mark_viewed_segments=()=>count++;
+c._segment_cache.set('abcdefghijk',[{start:10,end:20,UUID:['fixture']}],false);
+let guard,cb;
+a._command=(n,p,done,err,g)=>{if(n=='seekTo'){guard=g;cb=done;}};
+let state=snapshot(l);
+check(!('search_available' in state) && !('search_results' in state),'removed search state is absent');
+check(!command(l,'search',0,'fixture').accepted && !l.command_pending,'removed search action rejected');
+
+check(command(l,'skip_segment',0,'').accepted,'manual segment queued');
+a._process_event('nowPlaying',[{videoId:'abcdefghijk',state:1,currentTime:20,duration:100}]);
+check(!guard(),'natural playback exits segment');
+cb(false);
+check(count==0 && l.command_status=='failed' && !l.command_pending,'undispatched manual seek never confirmed');
+l._seek_pending=true;
+check(!command(l,'speed',150,'').accepted,'manual speed blocked during auto seek');
+let b=YtLoungeApi({screen_id:'fixture',lounge_token:'token'});
+b._sid='s';b._gsession='g';b._command_mutex=true;
+let guards=0,finished=0,sent=0;
+b._send_command=()=>sent++;
+b._command('pause',{},(ok)=>{check(!ok,'expired failed');finished++;},null,()=>{guards++;return true;});
+b._command_queue[0].queued=util.monotonic_ms()-9000;b._command_mutex=false;b._drain_commands();
+check(guards==0 && finished==1 && sent==0,'expired command never executes dispatch guard');
+print('Undispatched seek, speed conflict and expired command guards OK\n');

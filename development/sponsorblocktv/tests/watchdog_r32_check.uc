@@ -1,0 +1,12 @@
+'use strict';
+import {YtLoungeApi} from './lib/lounge.uc';
+import * as util from './lib/util.uc';
+let u=require('uloop');u.init();
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'token'});
+a._sid='s';a._gsession='g';a._subscribe_active=true;
+a._subscribe_started=util.monotonic_ms()-61000;
+a._process_event('noop',[]);
+let fired=0;
+a._start_watchdog(()=>{fired++;if(a.connected() || fired!=1)die('watchdog cleanup');print('Watchdog reconnects even without first screen event\n');u.end();});
+u.timer(6500,()=>die('watchdog did not fire'));
+u.run();

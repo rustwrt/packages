@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Bounded, TLS-verified public watch page transport (no credentials)."""
+import os
+import re
+import signal
+import ssl
+import stat
+import sys
+import urllib.request
+from pathlib import Path
+
+LIMIT = 2097152
+
+def fetch(video):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{11}', video):
+        raise ValueError('invalid video')
+    url = 'https://www.youtube.com/watch?v=' + video
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html',
+        'Accept-Language': 'en-US,en;q=0.8', 'Accept-Encoding': 'identity'})
+    context = ssl.create_default_context(cafile='/etc/ssl/certs/ca-certificates.crt')
+    with urllib.request.urlopen(request, timeout=5, context=context) as response:
+        if response.status != 200 or response.url != url:
+            raise ValueError('unexpected watch response')
+        body = response.read(LIMIT + 1)
+        if not body or len(body) > LIMIT:
+            raise ValueError('invalid watch body size')
+        return body
+
+def main(argv):
+    if len(argv) != 3 or not re.fullmatch(r'/tmp/sbtv-channel-[a-f0-9]{32}/page', argv[2]):
+        return 2
+    path = Path(argv[2])
+    info = path.parent.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o700:
+        return 2
+    body = fetch(argv[1])
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as f:
+        f.write(body)
+    return 0
+
+if __name__ == '__main__':
+    signal.signal(signal.SIGALRM, lambda *_: os._exit(124))
+    signal.alarm(6)
+    try:
+        sys.exit(main(sys.argv))
+    except Exception:
+        sys.exit(1)

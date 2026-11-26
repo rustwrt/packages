@@ -1,0 +1,2 @@
+Lucide Static 0.468.0 (ISC and upstream Feather MIT notices in LICENSE)\nhttps://www.npmjs.com/package/lucide-static/v/0.468.0\nUnmodified SVG subset, bundled locally; no CDN required.\n
+keyboard.svg: locally drawn keyboard icon in matching stroke style.

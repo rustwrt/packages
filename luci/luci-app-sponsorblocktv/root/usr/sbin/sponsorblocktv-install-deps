@@ -1,0 +1,57 @@
+#!/bin/sh
+set -eu
+umask 077
+dir=/var/run/sponsorblocktv-installer
+mkdir -p "$dir"
+stage() { echo "$*" > "$dir/state.new"; mv "$dir/state.new" "$dir/state"; }
+manager() {
+    attempts=0
+    while :; do
+        stage "RUN $1"
+        shift_stage=$1
+        if (shift; "$@") >"$dir/output" 2>&1; then return 0; fi
+        if ! grep -q 'Could not lock .*opkg.lock' "$dir/output"; then cat "$dir/output"; return 1; fi
+        attempts=$((attempts+1))
+        if [ "$attempts" -ge 30 ]; then cat "$dir/output"; echo 'Another package operation is active. Retry when it finishes.'; return 1; fi
+        stage "RUN Waiting for the package manager ($shift_stage)"
+        sleep 2
+    done
+}
+install() {
+    # Only install packages confirmed missing. A failed runtime self-test is
+    # not evidence that an installed core package needs to be reinstalled.
+    list=$(/usr/sbin/sponsorblocktv-deps) || { echo 'Dependency verification failed; inspect the runtime error before retrying.'; return 1; }
+    pkgs=$(printf '%s\n' "$list" | awk '/^MISSING [a-zA-Z0-9][a-zA-Z0-9+._-]*$/ && !seen[$2]++ {print $2}')
+    if [ -n "$pkgs" ]; then
+        if command -v opkg >/dev/null; then
+            manager 'Updating signed package indexes' opkg update || return 1
+            manager 'Checking available packages' opkg list || return 1
+            for pkg in $pkgs; do
+                if ! grep -q "^$pkg - " "$dir/output"; then
+                    echo "Missing from configured feeds: $pkg"
+                    echo 'Enable the signed SponsorBlockTV feed for this OpenWrt release and architecture, then retry.'
+                    return 1
+                fi
+            done
+            manager 'Installing packages' opkg install $pkgs || return 1
+        else manager 'Installing packages' apk add $pkgs || return 1; fi
+    fi
+    stage 'RUN Verifying installation'
+    remaining=$(/usr/sbin/sponsorblocktv-deps) || return 1
+    [ -z "$remaining" ] || { echo "$remaining"; return 1; }
+}
+exec 9>"$dir/lock"
+case "${1:-}" in
+ status)
+    state=$(cat "$dir/state" 2>/dev/null || echo IDLE)
+    case "$state" in RUN*) if flock -n 9; then state='FAIL Installer stopped before verification'; fi;; esac
+    printf '%s\n' "$state"
+    case "$state" in FAIL*) tail -c 8192 "$dir/log";; esac ;;
+ core)
+    if ! flock -n 9; then
+        echo 'Installation already running'; exit 0
+    fi
+    stage 'RUN Preparing installation'
+    (if install; then stage DONE; else stage FAIL; fi) </dev/null >"$dir/log" 2>&1 & ;;
+ *) echo 'Usage: core|status' >&2; exit 2 ;;
+esac

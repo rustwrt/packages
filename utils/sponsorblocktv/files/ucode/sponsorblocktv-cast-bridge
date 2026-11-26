@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+# sponsorblocktv-cast-bridge - Chromecast Cast V2 operations via pychromecast.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Bridges the ucode application to pychromecast for Chromecast discovery and
+# YouTube MDX screen_id lookup. The ucode side invokes this script as a
+# subprocess and reads a single line of JSON from stdout.
+#
+# Usage:
+#   sponsorblocktv-cast-bridge discover
+#   sponsorblocktv-cast-bridge query <host> [name]
+#
+# Output (one JSON object on a single line):
+#   discover: {"devices": [{"screen_id": "...", "name": "...", "offset": 0}]}
+#   query:    {"screen_id": "...", "name": "...", "offset": 0} | {"error": "..."}
+
+import sys
+import os
+import json
+import logging
+import signal
+import subprocess
+from uuid import NAMESPACE_DNS, uuid5
+from pathlib import Path
+
+# Private dependencies; never install into system site-packages.
+VENDOR = Path("/usr/lib/sponsorblocktv/python")
+source_vendor = Path(__file__).resolve().parent.parent / "python"
+if source_vendor.is_dir():
+    VENDOR = source_vendor
+sys.path.insert(0, str(VENDOR))
+sys.dont_write_bytecode = True
+# Avoid loading a system google._upb extension against our private Protobuf.
+import google
+google.__path__ = [str(VENDOR / "google")]
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
+logging.basicConfig(level=logging.CRITICAL)
+
+
+def _screen_id_from_cast(cast, passive=False):
+    from pychromecast.controllers.youtube import YouTubeController, YOUTUBE_NAMESPACE
+
+    try:
+        cast.wait(timeout=5)
+    except Exception:
+        return None
+
+    yt = YouTubeController()
+    cast.register_handler(yt)
+    try:
+        if passive:
+            if YOUTUBE_NAMESPACE not in cast.socket_client.app_namespaces:
+                return None
+            cast.socket_client.send_app_message(YOUTUBE_NAMESPACE, {"type": "getMdxSessionStatus"})
+            yt.status_update_event.wait(4)
+        else:
+            yt.update_screen_id()
+    except Exception:
+        pass
+
+    try:
+        cast.wait(timeout=2)
+    except Exception:
+        pass
+
+    screen_id = getattr(yt, "_screen_id", None)
+    if not screen_id:
+        return None
+
+    try:
+        name = cast.cast_info.friendly_name
+    except Exception:
+        try:
+            name = cast.name
+        except Exception:
+            name = "Chromecast"
+
+    return {"screen_id": screen_id, "name": name, "offset": 0}
+
+
+def _disconnect(cast):
+    try:
+        cast.disconnect(timeout=1)
+    except Exception:
+        pass
+
+
+def cmd_query(host, name=None):
+    import pychromecast
+
+    try:
+        cast = pychromecast.get_chromecast_from_host(
+            (host, 8009, uuid5(NAMESPACE_DNS, host), None, name),
+            tries=2, retry_wait=1, timeout=6,
+        )
+    except Exception as e:
+        return {"error": "connect_failed: " + str(e)}
+    try:
+        dev = _screen_id_from_cast(cast)
+    finally:
+        _disconnect(cast)
+    if not dev:
+        return {"error": "no_screen_id"}
+    if name:
+        dev["name"] = name
+    return dev
+
+
+def _lan_statuses():
+    """Discover only LAN and interfaces explicitly assigned to firewall zone lan."""
+    import shlex
+    # uloop.process supplies a minimal environment; do not depend on PATH.
+    networks = {"lan"}
+    try:
+        cfg = subprocess.check_output(["/sbin/uci","-q","show","firewall"],timeout=3,text=True)
+        sections = {}
+        for line in cfg.splitlines():
+            key, sep, value = line.partition("=")
+            if not sep or "." not in key:
+                continue
+            parts = key.split(".",2)
+            if len(parts) == 3:
+                sections.setdefault(parts[1],{})[parts[2]] = shlex.split(value)
+        for sec in sections.values():
+            if sec.get("name") == ["lan"]:
+                for item in sec.get("network",[]):
+                    networks.update(item.split())
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    statuses = json.loads(subprocess.check_output(["/bin/ubus","call","network.interface","dump"],timeout=3,text=True))
+    return [s for s in statuses.get("interface",[]) if s.get("up") and s.get("interface") in networks and s.get("interface") not in ("wan","wan6")][:8]
+
+
+def trusted_cast_host(host):
+    """Limit active connections to a unicast address on an active LAN subnet."""
+    import ipaddress
+    try:
+        addr = ipaddress.IPv4Address(host)
+        if addr.is_loopback or addr.is_multicast or addr.is_unspecified or addr.is_link_local:
+            return False
+        for status in _lan_statuses():
+            for entry in status.get("ipv4-address", []):
+                iface = ipaddress.IPv4Interface(f"{entry['address']}/{entry['mask']}")
+                net = iface.network
+                if net.prefixlen and addr in net and addr not in (iface.ip, net.network_address, net.broadcast_address):
+                    return True
+    except (ValueError, KeyError, OSError, subprocess.SubprocessError):
+        return False
+    return False
+
+
+def cmd_probe_lan(host, uid):
+    import pychromecast
+    from uuid import UUID
+    if not trusted_cast_host(host):
+        return {"error": "Receiver is outside the active LAN"}
+    cast = None
+    try:
+        identity = UUID(uid)
+        cast = pychromecast.get_chromecast_from_host(
+            (host, 8009, identity, None, None), tries=1, retry_wait=0.5, timeout=3)
+        cast.wait(timeout=5)
+        if cast.status is None:
+            return {"error": "No Cast receiver status"}
+        device = _screen_id_from_cast(cast, passive=True)
+        return {"cast": True, "screen_id": device.get("screen_id") if device else None}
+    except Exception:
+        return {"error": "Cast receiver unavailable"}
+    finally:
+        if cast is not None:
+            _disconnect(cast)
+
+
+def _lan_interfaces():
+    import socket
+    addresses, ipv6 = [], False
+    for status in _lan_statuses():
+        addresses.extend(e["address"] for e in status.get("ipv4-address",[]) if e.get("address"))
+        device = status.get("l3_device") or status.get("device")
+        if device:
+            try:
+                addresses.append(socket.if_nametoindex(device))
+                ipv6 = True
+            except OSError:
+                pass
+    return list(dict.fromkeys(addresses)), ipv6
+
+
+def _available_memory():
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1])
+    except OSError:
+        pass
+    return 0
+
+
+def cmd_discover(progress=None):
+    import time
+    import concurrent.futures
+    import pychromecast
+    from pychromecast.discovery import CastBrowser, SimpleCastListener
+    from zeroconf import Zeroconf, IPVersion
+
+    results, seen = [], set()
+    candidates, paired = {}, set()
+    zc = browser = None
+    available = _available_memory()
+    workers = 8 if available >= 128*1024 else 4 if available >= 64*1024 else 2 if available >= 32*1024 else 1
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+    futures = {}
+    submitted = set()
+
+    def query_info(info):
+        cast = None
+        try:
+            cast = pychromecast.get_chromecast_from_cast_info(
+                info, zc, tries=2, retry_wait=0.5, timeout=4)
+            return _screen_id_from_cast(cast, passive=True)
+        except Exception:
+            return None
+        finally:
+            if cast is not None:
+                _disconnect(cast)
+
+    def snapshot():
+        return {"devices": sorted(results,key=lambda d:(d["name"] or "").casefold()),
+                "unpaired": sorted((info for uid,info in candidates.items() if uid not in paired),key=lambda d:d["name"].casefold())}
+    last_snapshot = None
+    def publish():
+        nonlocal last_snapshot
+        if progress:
+            path = Path(progress)
+            temp = path.with_suffix(".tmp")
+            payload = json.dumps(snapshot())
+            if payload == last_snapshot:
+                return
+            last_snapshot = payload
+            temp.write_text(payload, encoding="utf-8")
+            os.replace(temp,path)
+    try:
+        interfaces, ipv6 = _lan_interfaces()
+        if not interfaces:
+            return {"error": "no_active_lan_interface"}
+        try:
+            zc = Zeroconf(interfaces=interfaces,
+                          ip_version=IPVersion.All if ipv6 else IPVersion.V4Only)
+        except (OSError, ValueError):
+            # Some OpenWrt builds disable IPv6; retain the LAN IPv4 scan.
+            addresses = [a for a in interfaces if isinstance(a, str)]
+            if not addresses:
+                raise
+            zc = Zeroconf(interfaces=addresses, ip_version=IPVersion.V4Only)
+        browser = CastBrowser(SimpleCastListener(), zc)
+        browser.start_discovery()
+        # Resolve receivers while mDNS is still listening, rather than serially
+        # querying every device after discovery. A slow receiver cannot block others.
+        start = time.monotonic()
+        while time.monotonic() - start < 25:
+            if time.monotonic() - start < 15:
+                with browser._services_lock:
+                    infos = list(browser.devices.items())
+                for uid, info in infos:
+                    if not info.services:
+                        continue
+                    candidates[uid] = {"name": info.friendly_name or "Chromecast", "model": info.model_name or "", "manufacturer": info.manufacturer or "", "uuid": str(uid), "id": str(uid), "host": info.host or "", "port": info.port, "source": "Cast"}
+                    if uid not in submitted and len(futures) < workers * 3:
+                        submitted.add(uid)
+                        futures[pool.submit(query_info, info)] = uid
+            for future in list(futures):
+                if not future.done():
+                    continue
+                uid = futures.pop(future)
+                dev = future.result()
+                if dev:
+                    paired.add(uid)
+                    dev.update({k: v for k, v in candidates[uid].items() if k != "name"})
+                    dev.update({"application": "YouTube MDX"})
+                if dev and dev["screen_id"] not in seen:
+                    seen.add(dev["screen_id"])
+                    results.append(dev)
+            publish()
+            if time.monotonic() - start >= 15 and not futures:
+                break
+            time.sleep(0.2)
+    except Exception as e:
+        if not results and not candidates:
+            return {"error": "discovery_failed: " + str(e)}
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+        if browser is not None:
+            try:
+                browser.stop_discovery()
+            except Exception:
+                pass
+        elif zc is not None:
+            zc.close()
+    unpaired = [info for uid, info in candidates.items() if uid not in paired]
+    return {"devices": sorted(results, key=lambda d: (d["name"] or "").casefold()),
+            "unpaired": sorted(unpaired, key=lambda d: d["name"].casefold())}
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(json.dumps({"error": "usage"}))
+        return 2
+
+    action = argv[1]
+    if action == "self-test":
+        import importlib
+        modules = {}
+        for name in ("pychromecast", "google.protobuf", "casttube", "requests", "ifaddr",
+                     "urllib3", "certifi", "idna", "chardet", "zeroconf"):
+            module = importlib.import_module(name)
+            path = Path(module.__file__).resolve()
+            private = name in ("pychromecast", "google.protobuf", "casttube")
+            if path.is_relative_to(VENDOR.resolve()) != private:
+                raise RuntimeError(f"{name} loaded from wrong dependency location: {path}")
+            modules[name] = str(path)
+        from pychromecast.controllers.youtube import YouTubeController
+        from zeroconf import Zeroconf, IPVersion
+        import inspect
+        import pychromecast
+        assert "zeroconf_instance" in inspect.signature(pychromecast.get_chromecasts).parameters
+        from pychromecast.generated.cast_channel_pb2 import CastMessage
+        msg = CastMessage(protocol_version=0, source_id="sender-0",
+                          destination_id="receiver-0", namespace="urn:x-cast:test",
+                          payload_type=0, payload_utf8="{}")
+        assert CastMessage.FromString(msg.SerializeToString()) == msg
+        print(json.dumps({"ok": True, "modules": modules}))
+        return 0
+    if action == "interfaces":
+        print(json.dumps({"ipv4": list(dict.fromkeys(e["address"] for s in _lan_statuses() for e in s.get("ipv4-address",[]) if e.get("address")))[:8]}))
+        return 0
+    if action == "discover":
+        result = cmd_discover(argv[2] if len(argv)>2 else None)
+        if len(argv)>2:
+            path=Path(argv[2]); temp=path.with_suffix(".tmp"); temp.write_text(json.dumps(result),encoding="utf-8"); os.replace(temp,path)
+        else:
+            print(json.dumps(result), flush=True)
+        # The scan is bounded; remaining receiver threads must not keep the CLI alive.
+        os._exit(0)
+    if action == "probe-lan":
+        if len(argv) != 5:
+            return 2
+        signal.alarm(15)
+        result = cmd_probe_lan(argv[2], argv[3])
+        path = Path(argv[4])
+        temp = path.with_suffix(".tmp")
+        temp.write_text(json.dumps(result), encoding="utf-8")
+        os.replace(temp, path)
+        return 0
+    if action == "query-lan":
+        if len(argv) != 3 or not trusted_cast_host(argv[2]):
+            print(json.dumps({"error": "Receiver is outside the active LAN"}))
+            return 2
+        print(json.dumps(cmd_query(argv[2])))
+        return 0
+    if action == "query":
+        if len(argv) < 3:
+            print(json.dumps({"error": "missing host"}))
+            return 2
+        host = argv[2]
+        name = argv[3] if len(argv) > 3 else None
+        print(json.dumps(cmd_query(host, name)))
+        return 0
+
+    print(json.dumps({"error": "unknown_action: " + action}))
+    return 2
+
+
+if __name__ == "__main__":
+    def timeout(signum, frame):
+        print(json.dumps({"error": "timeout"}), flush=True)
+        os._exit(124)
+
+    if hasattr(signal, "SIGALRM"):
+        signal.signal(signal.SIGALRM, timeout)
+        signal.alarm(30)
+    try:
+        sys.exit(main(sys.argv))
+    except Exception as exc:
+        print(json.dumps({"error": str(exc)}))
+        sys.exit(1)

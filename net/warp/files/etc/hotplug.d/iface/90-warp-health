@@ -1,0 +1,8 @@
+#!/bin/sh
+# Defer bounded connectivity checks until netifd has brought the device up.
+[ "$ACTION" = ifup ] || exit 0
+case "$INTERFACE" in ''|*[!A-Za-z0-9_-]*) exit 0;; esac
+[ "${#INTERFACE}" -le 15 ] || exit 0
+[ "$(uci -q get "network.$INTERFACE.proto")" = warp ] || exit 0
+/usr/libexec/warp-health "$INTERFACE" </dev/null >/dev/null 2>&1 &
+exit 0

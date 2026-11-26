@@ -1,0 +1,26 @@
+'use strict';
+import {YtLoungeApi} from './lib/lounge.uc';
+import {snapshot} from './lib/live.uc';
+import * as util from './lib/util.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'token'});
+a._sid='s';a._gsession='g';a._subscribe_active=true;
+let l={phase:'connected',lounge:a};
+a.on_state_change=(st)=>{l._current_state={...st};};
+a._command=()=>{};
+a._process_event('nowPlaying',[{videoId:'abcdefghijk',state:1,currentTime:10,duration:100}]);
+a._process_event('adPlaying',[{adVideoId:'a1',duration:15,currentTime:2,isSkippable:'true',isSkipEnabled:'false'}]);
+let s=snapshot(l);
+check(s.ad_skippable===true && s.ad_skip_estimated && s.ad_skip_at==5 && s.ad_skip_in==3 && !s.ad_can_skip,'estimate only for skippable ad');
+a._process_event('onAdStateChange',[{adState:1081,currentTime:6,isSkipEnabled:'false'}]);
+s=snapshot(l);check(s.ad_skip_in==null && !s.ad_can_skip,'wait for confirmation beyond estimate');
+a._process_event('onAdStateChange',[{adState:1081,currentTime:7,isSkipEnabled:'true'}]);
+s=snapshot(l);check(s.ad_can_skip && s.ad_skip_at==7 && !s.ad_skip_estimated,'observed enable point');
+a._process_event('adPlaying',[{adVideoId:'a2',currentTime:1,duration:6,isSkippable:false,isSkipEnabled:false}]);
+s=snapshot(l);check(s.ad_skippable===false && s.ad_skip_at==null && s.ad_skip_in==null && !s.ad_can_skip,'new unskippable ad resets');
+a._process_event('adPlaying',[{adVideoId:'a3',currentTime:1,duration:20}]);
+s=snapshot(l);check(s.ad_skippable==null && s.ad_skip_at==null,'unknown ad has no estimate');
+a._process_event('onAdStateChange',[{adState:1082}]);
+s=snapshot(l);check(!s.ad_active && s.ad_skip_at==null && s.ad_skippable==null,'clear ad');
+print('Ad skip countdown estimates, actual availability and ad isolation OK\n');

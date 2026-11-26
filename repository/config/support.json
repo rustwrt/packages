@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "min_openwrt_major": 24,
+  "releases": [
+    {
+      "series": "24.x",
+      "manager": "opkg",
+      "format": "ipk",
+      "status": "supported"
+    },
+    {
+      "series": "25.x",
+      "manager": "detect",
+      "format": "detect",
+      "status": "supported-when-validated"
+    },
+    {
+      "series": "26.x+",
+      "manager": "detect",
+      "format": "detect",
+      "status": "requires-validation"
+    }
+  ],
+  "channels": [
+    "stable",
+    "snapshot"
+  ],
+  "compatibility_keys": [
+    "release",
+    "target",
+    "subtarget",
+    "architecture",
+    "libc",
+    "package_manager",
+    "abi"
+  ],
+  "kernel_modules": "exact-kernel-abi-required"
+}

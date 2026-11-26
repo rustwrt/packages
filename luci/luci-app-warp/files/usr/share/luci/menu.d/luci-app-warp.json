@@ -1,0 +1,15 @@
+{
+  "admin/status/warp": {
+    "title": "Cloudflare WARP",
+    "order": 75,
+    "action": {
+      "type": "view",
+      "path": "status/warp"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-warp"
+      ]
+    }
+  }
+}

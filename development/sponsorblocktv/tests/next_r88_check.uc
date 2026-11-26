@@ -1,0 +1,36 @@
+'use strict';
+import {YtLoungeApi} from './lib/lounge.uc';
+import {command,snapshot} from './lib/live.uc';
+import * as util from './lib/util.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'token'});
+a._sid='s';a._gsession='g';a._subscribe_active=true;
+let l={phase:'connected',lounge:a,_time_start:util.monotonic_ms()};
+a.on_state_change=(st)=>{l._current_state={...st};l._time_start=util.monotonic_ms();};
+function pos(v,extra){a._process_event('nowPlaying',[{videoId:v,state:1,currentTime:15,duration:100,...extra}]);}
+let orig='abcdefghijk',target='lmnopqrstuv',calls=[],guard,done;
+a._command=(n,p,cb,err,g)=>{push(calls,n);guard=g;done=cb;};
+pos(orig,{});
+check(!snapshot(l).has_next && !snapshot(l).has_previous,'unknown availability disabled');
+check(!command(l,'next',0,'').accepted && !command(l,'previous',0,'').accepted && !length(calls),'no navigation dispatched');
+a._process_event('playlistModified',[{videoIds:orig+','+target}]);
+check(snapshot(l).has_next && !snapshot(l).has_previous,'complete queue first item');
+a._process_event('hasPreviousNextChanged',[{hasNext:'false',hasPrevious:'true'}]);
+check(!snapshot(l).has_next && snapshot(l).has_previous,'screen flags override queue');
+check(!command(l,'next',0,'').accepted,'explicit false blocks next');
+a._process_event('hasPreviousNextChanged',[{hasNext:'true',hasPrevious:'false'}]);
+check(command(l,'next',0,'').accepted,'next accepted');
+a._process_event('hasPreviousNextChanged',[{hasNext:'false'}]);
+check(!guard(),'stale queued next blocked');done(false);
+check(l.command_status=='failed' && !l.command_pending,'stale navigation failed');
+a._process_event('hasPreviousNextChanged',[{hasNext:'true'}]);
+check(command(l,'next',0,'').accepted && guard(),'next dispatch');
+pos(target,{hasNext:false,hasPrevious:true});done(true);
+check(l.command_status=='sent' && snapshot(l).has_previous && !snapshot(l).has_next,'confirmed new video, last item');
+check(command(l,'previous',0,'').accepted && guard(),'previous dispatch');
+pos(orig,{hasNext:true,hasPrevious:false});done(true);
+check(l.command_status=='sent' && snapshot(l).has_next && !snapshot(l).has_previous,'previous confirmed');
+a._process_event('adPlaying',[{isSkipEnabled:false}]);
+check(!snapshot(l).has_next && !snapshot(l).has_previous && !command(l,'next',0,'').accepted,'ad isolation');
+print('PASS: navigation availability, queue edges, stale dispatch, next/previous confirmation\n');

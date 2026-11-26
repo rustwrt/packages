@@ -1,0 +1,123 @@
+# Dependencies and local development environments
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+.astro/
+.wrangler/
+.npm/
+
+# Build products and generated releases
+build/
+dist/
+target/
+artifacts/
+release-artifacts/
+candidate-download/
+coverage/
+.sdk/
+sdk/
+*.ipk
+*.apk
+*.adb
+*.lmo
+*.o
+*.a
+*.so
+*.so.*
+*.dll
+*.exe
+*.pyd
+*.whl
+*.tar.gz
+*.tar.zst
+*.tgz
+*.zip
+uc.out
+
+# Local logs, test output and temporary files
+*.log
+*.log.*
+*.tmp
+*.bak
+*.orig
+*.swp
+*.swo
+*.pid
+*.pcap
+*.pcapng
+test-results/
+test-reports/
+backup/
+backups/
+
+# Credentials and local overrides
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+*.key
+*.pem
+*.pfx
+*.p12
+*.jks
+*.kdbx
+id_rsa
+id_ed25519
+id_ecdsa
+.netrc
+.npmrc.local
+secrets/
+credentials/
+secrets.json
+credentials.json
+config.local.json
+*.local.json
+
+# IDE, OS and local agent state
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+.kilo/
+.kilocode/
+.opencode/
+.claude/settings.local.json
+.codex/
+
+# Generated feed metadata; retain documentation and public key sources
+/repository/metadata/*
+!/repository/metadata/README.md
+!/repository/metadata/README_VI.md
+/repository/keys/*.sec
+/repository/keys/*.priv
+/repository/keys/*private*
+/repository/keys/*secret*
+
+# Local SponsorBlock references (not package source)
+/development/sponsorblocktv/upstream/
+/development/sponsorblocktv/experiments/
+/development/sponsorblocktv/uc.out
+
+# Local agent instructions
+AGENTS.md
+
+# NetBraid: local development, not ready for publication
+/net/netbraid/
+/luci/luci-app-netbraid/
+/luci/luci-i18n-netbraid-*/
+/development/netbraid/
+
+# Local package release artifacts; publish via GitHub Releases only
+/releases/
+
+# Historical local patch scripts
+/development/sponsorblocktv/scripts/legacy/

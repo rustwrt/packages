@@ -1,0 +1,13 @@
+'use strict';
+import * as util from './lib/util.uc';
+import * as config from './lib/config.uc';
+import * as http from './lib/http.uc';
+import * as sponsorblocktv from './lib/sponsorblock.uc';
+import * as lounge from './lib/lounge.uc';
+import * as dial from './lib/dial.uc';
+import * as mdns from './lib/mdns.uc';
+import * as discovery from './lib/discovery.uc';
+import * as runtime from './lib/runtime.uc';
+import * as pair_store from './lib/pair_store.uc';
+import * as client from './lib/cast/client.uc';
+printf('All 11 modules loaded\n');

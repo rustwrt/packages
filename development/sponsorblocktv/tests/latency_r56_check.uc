@@ -1,0 +1,27 @@
+'use strict';
+import {YtLoungeApi} from './lib/lounge.uc';
+import {command} from './lib/live.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'token',skip_ads:true});
+a._sid='s';a._gsession='g';a._subscribe_active=true;
+let sent=[],callbacks=[];
+a._send_command=(n,p,cb)=>{push(sent,n);push(callbacks,cb);};
+a._command('getVolume');
+a._command('getNowPlaying');
+a._command('pause');
+a._command('play');
+check(length(sent)==1,'serial transport retained');
+callbacks[0](true);
+check(sent[1]=='pause','mutation before queued poll');
+callbacks[1](true);check(sent[2]=='play','mutation order preserved');
+callbacks[2](true);check(sent[3]=='getNowPlaying','read query eventually dispatched');
+callbacks[3](true);
+let l={phase:'connected',lounge:a};
+a.on_state_change=(st)=>{l._current_state={...st};};
+a._process_event('nowPlaying',[{videoId:'abcdefghijk',state:1,currentTime:10,duration:100}]);
+check(command(l,'pause',0,'').accepted && sent[4]=='pause','real command dispatched');
+a._process_event('onStateChange',[{state:2,currentTime:10}]);
+callbacks[4](true);
+check(l.command_status=='sent' && !l.command_pending && length(sent)==5,'already confirmed command avoids extra network poll');
+print('Mutation ordering and no redundant confirmation requests OK\n');

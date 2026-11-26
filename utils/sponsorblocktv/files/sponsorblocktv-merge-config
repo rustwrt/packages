@@ -1,0 +1,58 @@
+#!/bin/sh
+# Add missing common options without overwriting existing values or TV policies.
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -eu
+umask 077
+dir=${1:-/etc/config}
+cfg="$dir/sponsorblocktv"
+[ -f "$cfg" ] && [ ! -L "$cfg" ] || exit 1
+# Do not commit unrelated unsaved LuCI/UCI changes during an upgrade.
+pending=$(uci -q -c "$dir" changes sponsorblocktv) || exit 1
+if [ -n "$pending" ]; then
+    echo 'Configuration merge deferred: unsaved UCI changes exist'
+    exit 0
+fi
+work=$(mktemp -d "$dir/.sbtv-merge.XXXXXX") || exit 1
+trap 'rm -rf "$work"' EXIT
+trap 'exit 1' HUP INT TERM
+mkdir "$work/delta"
+cp "$cfg" "$work/original"
+# A random staging package name isolates the merge from global UCI delta
+# files even if a LuCI user starts editing sponsorblocktv concurrently.
+stage_pkg="sbtv_merge_${work##*.}"
+cp "$cfg" "$work/$stage_pkg"
+stage() { uci -q -c "$work" -t "$work/delta" "$@"; }
+# Refuse invalid or unusual layouts rather than silently selecting another main.
+stage show "$stage_pkg" >/dev/null || exit 1
+[ "$(stage get "$stage_pkg.main")" = sponsorblocktv ] || exit 1
+added=0
+add_default() {
+    if ! stage get "$stage_pkg.main.$1" >/dev/null 2>&1; then
+        stage set "$stage_pkg.main.$1=$2" || exit 1
+        added=$((added + 1))
+    fi
+}
+# Keep this list aligned with the runtime defaults. Never add device policies
+# here: legacy inheritance is materialized by the existing per-TV migration.
+add_default enabled 0
+add_default debug 0
+add_default http_tracing 0
+add_default data_dir /etc/sponsorblocktv/data
+add_default join_name SponsorBlockTV
+# Missing API key is equivalent to an empty key; do not synthesize it.
+add_default skip_count_tracking 1
+add_default use_proxy 0
+add_default sponsorblock_api_url https://sponsor.ajay.app/api/
+[ "$added" -gt 0 ] || exit 0
+stage commit "$stage_pkg"
+stage show "$stage_pkg" >/dev/null
+chmod 600 "$work/$stage_pkg"
+# Verify no edits arrived while we were staging. Never consume the opkg
+# sidecar, which remains available for inspection.
+pending=$(uci -q -c "$dir" changes sponsorblocktv) || exit 1
+if [ -n "$pending" ] || [ -L "$cfg" ] || ! cmp -s "$cfg" "$work/original"; then
+    echo 'Configuration merge deferred: configuration changed'
+    exit 0
+fi
+mv -f "$work/$stage_pkg" "$cfg"
+echo "Configuration merged: $added missing common option(s) added"

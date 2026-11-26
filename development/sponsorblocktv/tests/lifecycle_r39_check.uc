@@ -1,0 +1,37 @@
+'use strict';
+import {YtLoungeApi} from './lib/lounge.uc';
+import {DeviceListener} from './lib/runtime.uc';
+import {SponsorBlockClient} from './lib/sponsorblock.uc';
+import * as util from './lib/util.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let c=SponsorBlockClient({skip_categories:['sponsor'],devices:[]});
+let id='abcdefghijk';
+c._segment_cache.set(id,[{start:10,end:20,UUID:['fixture']}],false);
+let l=DeviceListener(c,{}, {screen_id:'fixture',name:'fixture',offset:0,skip_categories:['sponsor']},false);
+let a=l.lounge;a._sid='s';a._gsession='g';a._subscribe_active=true;l.phase='connected';
+l.metadata_id=id;l.video_title='Fixture';
+let marked=0,attempts=0,cb;
+c.mark_viewed_segments=()=>marked++;
+a._command=(n,p,done)=>{if(done)done(true);};
+a.seek_to=(pos,done,guard)=>{attempts++;cb=done;};
+a._process_event('nowPlaying',[{videoId:id,state:1,currentTime:15,duration:100}]);
+u.timer(70,()=>{
+    check(attempts==1 && l._seek_pending,'seek queued');
+    a._process_event('nowPlaying',[{videoId:id,state:1,currentTime:20,duration:100}]);
+    cb(false);
+    check(marked==0 && !l._seek_pending,'undispatched seek never counted');
+    a._process_event('playlistModified',[{videoIds:[id,'lmnopqrstuv']}]);
+    check(a.queue_complete,'valid queue');
+    a._process_event('playlistModified',[{videoIds:{bad:true}}]);
+    check(!a.queue_complete && a.queue==null,'malformed queue invalidates old queue');
+    a._process_event('onVideoQualityChanged',[{quality:{bad:true}}]);
+    check(a.quality==null,'malformed quality ignored');
+    let done=0;
+    l.cancel(()=>done++);
+    check(done==1 && l.cancelled && !a.connected(),'shutdown completes with local detach');
+    check(a._detaching && !a._sid && !a._gsession,'no remote session remains locally');
+    print('Undispatched skip statistics, malformed queue and shutdown completion OK\n');
+    u.end();
+});
+u.run();

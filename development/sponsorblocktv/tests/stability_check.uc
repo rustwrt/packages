@@ -1,0 +1,34 @@
+'use strict';
+import { YtLoungeApi } from './lib/lounge.uc';
+let uloop=require('uloop');
+uloop.init();
+function check(v,msg){if(!v)die(msg);}
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'token',skip_ads:true});
+a._sid='s';a._gsession='g';
+let sent=[],callbacks=[],finished=[];
+a._send_command=(n,p,ok,err)=>{push(sent,n);push(callbacks,ok);};
+a._command('getVolume',{},(ok)=>push(finished,ok));
+a._command('seekTo',{newTime:20},(ok)=>push(finished,ok),null,()=>false);
+a._command('getNowPlaying',{},(ok)=>push(finished,ok));
+a._process_event('adPlaying',[{adVideoId:'one',isSkipEnabled:true}]);
+check(length(sent)==1,'only one request in flight');
+callbacks[0](true);
+check(sent[1]=='skipAd','skip priority');
+callbacks[1](true);
+check(sent[2]=='getNowPlaying','stale seek dropped');
+callbacks[2](true);
+if(length(sent)>3)callbacks[3](true);
+a._process_event('nowPlaying',[{state:'1',currentTime:'9'}]);
+check(a._ad_active,'normal playback sample does not clear ad');
+uloop.timer(2400,()=>{
+    check(length(filter(sent,(n)=>n=='skipAd'))==2,'HTTP success without confirmation retried');
+    a._process_event('onAdStateChange',[{adState:'1082'}]);
+    check(!a._ad_active && a._ad_retry_timer==null,'explicit end cancels retry');
+    a._command('pause',{},(ok)=>push(finished,ok));
+    a._connection_lost();
+    check(length(a._command_queue)==0,'disconnect clears queue');
+    check(index(sent,'pause')<0,'stale pause not sent');
+    print('Queue serialization, stale command rejection, ad confirmation retry OK\n');
+    uloop.end();
+});
+uloop.run();

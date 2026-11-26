@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "projects": {
+    "warp": {
+      "repository": "rustwrt/luci-proto-warp",
+      "revision": "83d719957c7d24bc969767a96043c761b729981a",
+      "directories": [
+        "net/warp",
+        "luci/luci-app-warp",
+        "luci/luci-i18n-warp-vi"
+      ],
+      "migration_note": "Local monorepo migration from rustwrt/luci-proto-warp development checkout; original revision records historical origin, not a verified release commit."
+    }
+  }
+}

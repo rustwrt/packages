@@ -1,0 +1,174 @@
+#!/bin/sh
+# One bounded recovery cycle per interface setup. No registration API calls.
+umask 077
+iface="$1"
+case "$iface" in ''|*[!A-Za-z0-9_-]*) exit 1;; esac
+[ "${#iface}" -le 15 ] || exit 1
+dir="/tmp/warp/session-$iface"
+[ -s "$dir/owner" ] || exit 1
+owner="$(cat "$dir/owner")"
+case "$owner" in ''|*[!0-9]*) exit 1;; esac
+pub="$(wg show "$iface" public-key 2>/dev/null)" || exit 1
+peer="$(wg show "$iface" peers 2>/dev/null)" || exit 1
+case "$pub:$peer" in *'
+'*|:*|*:) exit 1;; esac
+mark="$(wg show "$iface" fwmark 2>/dev/null)" || exit 1
+case "$mark" in 0x[0-9a-fA-F]*|[0-9]*) ;; *) exit 1;; esac
+id=$((mark + 0))
+[ "$id" -ge 51820 ] && [ "$id" -lt 52820 ] || exit 1
+transport="/tmp/warp/transport-$id"
+read -r transport_iface transport_owner < "$transport/owner" || exit 1
+[ "$transport_iface" = "$iface" ] && [ "$transport_owner" = "$owner" ] || exit 1
+lock="/tmp/warp-health-$iface-$owner"
+mkdir "$lock" 2>/dev/null || exit 0
+trap 'rmdir "$lock" 2>/dev/null || :' EXIT HUP INT TERM
+alive() {
+ [ "$(cat "$dir/owner" 2>/dev/null)" = "$owner" ] &&
+ [ "$(wg show "$iface" public-key 2>/dev/null)" = "$pub" ] &&
+ [ "$(wg show "$iface" fwmark 2>/dev/null)" = "$mark" ]
+}
+alive || exit 1
+# Refresh mode only checks the current tunnel. It must never change its route,
+# endpoint, keys or registration when an old Public IP cache expires.
+if [ "${2:-}" != refresh ]; then
+# The route must be added after netifd's ifup; otherwise it is discarded
+# during device updates. Never replace another application's table contents.
+if [ -f "$transport/ipv6-active" ]; then
+ route6="$(ip -6 route show table "$id" 2>/dev/null)" || route6=''
+ if [ -z "$route6" ]; then
+  ip -6 route add default dev "$iface" table "$id" || logger -t warp-health "$iface IPv6 route unavailable"
+ elif ! printf '%s\n' "$route6" | grep -q "^default dev $iface "; then
+  logger -t warp-health "$iface IPv6 table conflict"
+ fi
+fi
+# Allow the initial handshake, then try known Cloudflare endpoints only when
+# the user has not selected an explicit endpoint.
+override="$(uci -q get "network.$iface.endpoint" 2>/dev/null)"
+current="$(wg show "$iface" endpoints 2>/dev/null | awk '{print $2}')"
+port="${current##*:}"
+case "$port" in ''|*[!0-9]*) port=2408;; esac
+case "$current" in 162.159.192.*:*) candidates="162.159.192.2 162.159.192.3 162.159.192.5 162.159.192.6 162.159.192.1 162.159.192.4 162.159.192.7 162.159.192.8 162.159.192.9 162.159.192.10";; *) candidates='';; esac
+[ -z "$override" ] || candidates=''
+connected() {
+ now="$(date +%s)"
+ hs="$(wg show "$iface" latest-handshakes 2>/dev/null | awk 'NR==1 {print $2}')"
+ case "$hs:$now" in *[!0-9:]*|:*|*:) return 1;; esac
+ [ "$hs" -gt 0 ] && [ "$hs" -le "$now" ] && [ $((now-hs)) -lt 180 ]
+}
+probe() { ping -4 -c 1 -W 1 -I "$iface" 1.1.1.1 >/dev/null 2>&1 || :; }
+probe
+sleep 2
+for host in $candidates; do
+ alive || exit 0
+ connected && break
+ candidate="$host:$port"
+ [ "$candidate" != "$current" ] || continue
+ wg set "$iface" peer "$peer" endpoint "$candidate" || break
+ current="$candidate"
+ probe
+ sleep 3
+done
+alive || exit 0
+if ! connected; then
+ printf '%s\n' handshake_timeout > "$dir/health-state"
+ logger -t warp-health "$iface handshake timeout after bounded endpoint checks"
+ exit 0
+fi
+printf '%s\n' handshake_ok > "$dir/health-state"
+fi
+# HTTPS verification is asynchronous relative to Status RPC.
+verify_https() {
+ family="$1"
+ trace="$(curl -q --noproxy '*' --interface "if!$iface" -"$family" --connect-timeout 3 --max-time 5 -fsS https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null)" || return 1
+ public_ip="$(printf '%s\n' "$trace" | sed -n 's/^ip=//p' | head -n 1)"
+ warp="$(printf '%s\n' "$trace" | sed -n 's/^warp=//p' | head -n 1)"
+ case "$public_ip" in ''|*[!0-9a-fA-F.:]*) return 1;; esac
+ [ "$warp" = on ] && alive || return 1
+ printf '%s %s\n' "$(date +%s)" "$public_ip" > "$dir/health$family"
+}
+# Require repeatable small-packet success and large-packet loss.
+probe_mss() (
+ family="$1"
+ mtu="$(cat "/sys/class/net/$iface/mtu" 2>/dev/null)" || exit 1
+ case "$mtu" in ''|*[!0-9]*) exit 1;; esac
+ [ "$mtu" -ge 576 ] && [ "$mtu" -le 9000 ] || exit 1
+ [ "$mtu" -le 1500 ] || mtu=1500
+ if [ "$family" = 4 ]; then
+  overhead=28; tcp=40; destination=1.1.1.1; ping_cmd=ping
+ else
+  overhead=48; tcp=60; destination=2606:4700:4700::1111; ping_cmd=ping6
+ fi
+ probe_size() {
+  alive || return 1
+  "$ping_cmd" -I "$iface" -c 1 -W 1 -s "$(($1-overhead))" "$destination" >/dev/null 2>&1
+ }
+ low=576; high="$mtu"
+ probe_size "$low" && probe_size "$low" || exit 1
+ if probe_size "$high" || probe_size "$high"; then exit 1; fi
+ for step in 1 2 3 4 5 6; do
+  [ "$((high-low))" -gt 16 ] || break
+  middle=$(((high+low)/2))
+  if probe_size "$middle" && probe_size "$middle"; then low="$middle"; else high="$middle"; fi
+ done
+ probe_size "$low" && probe_size "$low" || exit 1
+ mss=$((((low-tcp-32)/16)*16))
+ [ "$mss" -ge 256 ] || exit 1
+ printf '%s\n' "$mss"
+)
+# Per-transport table, shared teardown lock, no changes to fw4.
+apply_mss() (
+ cap4="$1"; cap6="$2"
+ [ -n "$cap4$cap6" ] && command -v nft >/dev/null 2>&1 || exit 1
+ table="rustwrt_warp_mss_$id"
+ exec 8>"/tmp/warp/.mss-$id.lock"
+ flock -x -w 5 8 || exit 1
+ alive || exit 1
+ read -r t_iface t_owner < "$transport/owner" || exit 1
+ [ "$t_iface" = "$iface" ] && [ "$t_owner" = "$owner" ] || exit 1
+ if nft list table inet "$table" >/dev/null 2>&1; then exit 1; fi
+ emit_rule() {
+  family="$1"; cap="$2"; direction="$3"
+  [ -n "$cap" ] || return 0
+  printf '  meta nfproto ipv%s %s "%s" tcp flags & (syn | rst) == syn tcp option maxseg size > %s counter tcp option maxseg size set %s\n' "$family" "$direction" "$iface" "$cap" "$cap"
+ }
+ emit_rules() {
+  emit_rule 4 "$cap4" "$1"
+  emit_rule 6 "$cap6" "$1"
+ }
+ printf '%s\n' "$owner" > "$transport/mss-owner" || exit 1
+ if ! {
+  printf 'table inet %s {\n chain output {\n  type filter hook output priority mangle + 5; policy accept;\n' "$table"
+  emit_rules oifname
+  printf ' }\n chain input {\n  type filter hook input priority mangle + 5; policy accept;\n'
+  emit_rules iifname
+  printf ' }\n chain forward {\n  type filter hook forward priority mangle + 5; policy accept;\n'
+  emit_rules oifname
+  emit_rules iifname
+  printf ' }\n}\n'
+ } | nft -f -; then
+  rm -f "$transport/mss-owner"
+  exit 1
+ fi
+ logger -t warp-health "$iface PMTU workaround: IPv4 MSS $cap4, IPv6 MSS $cap6"
+)
+failed4=0; failed6=0; cap4=''; cap6=''
+for family in 4 6; do
+ alive || exit 0
+ [ "$family" != 6 ] || [ -f "$transport/ipv6-active" ] || continue
+ if ! verify_https "$family"; then
+  if [ "$family" = 4 ]; then failed4=1; else failed6=1; fi
+ fi
+done
+# Public-IP cache refresh is read-only; adapt only during interface setup.
+if [ "$2" != refresh ] && [ "$((failed4+failed6))" -gt 0 ]; then
+ if command -v nft >/dev/null 2>&1; then
+  [ "$failed4" != 1 ] || cap4="$(probe_mss 4)" || cap4=''
+  [ "$failed6" != 1 ] || cap6="$(probe_mss 6)" || cap6=''
+  if [ -n "$cap4$cap6" ] && apply_mss "$cap4" "$cap6"; then
+   [ "$failed4" != 1 ] || verify_https 4 || :
+   [ "$failed6" != 1 ] || verify_https 6 || :
+  fi
+ else
+  logger -t warp-health "$iface HTTPS failed; nft unavailable for PMTU recovery"
+ fi
+fi

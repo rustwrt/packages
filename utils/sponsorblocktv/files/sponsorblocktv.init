@@ -1,0 +1,115 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# procd init script for SponsorBlockTV.
+# Translates UCI (/etc/config/sponsorblocktv) into config.json, then runs the
+# upstream CLI in the foreground so procd supervises it.
+
+START=95
+STOP=10
+USE_PROCD=1
+
+APP_DIR=${SBTV_APP_DIR:-/usr/lib/sponsorblocktv}
+APP_RUN=${SBTV_RUN:-/usr/sbin/sponsorblocktv-run}
+WRITE_CONFIG=${SBTV_WRITE_CONFIG:-/usr/sbin/sponsorblocktv-write-config}
+
+is_enabled() {
+	local v
+	config_get_bool v main enabled 0
+	[ "$v" = "1" ]
+}
+
+# The standard start/restart commands are explicit user actions.
+# Only boot and automatic reload consult the UCI autostart setting.
+boot() {
+    config_load sponsorblocktv
+    if is_enabled; then
+        start "$@"
+    fi
+}
+
+has_valid_device() {
+	local screen_id
+	config_get screen_id "$1" screen_id
+	[ -z "$screen_id" ] || has_device=1
+}
+
+start_service() {
+	config_load sponsorblocktv
+
+	local has_device=0
+	config_foreach has_valid_device device
+	[ "$has_device" = "1" ] || return 0
+
+	local data_dir debug http_tracing
+	config_get data_dir main data_dir /etc/sponsorblocktv/data
+	config_get_bool debug main debug 0
+	config_get_bool http_tracing main http_tracing 0
+
+
+	"$WRITE_CONFIG" "$data_dir" || {
+		logger -t sponsorblocktv "refusing to start: could not write config"
+		return 1
+	}
+
+	if [ -x "$APP_RUN" ] && ! /usr/bin/ucode "$APP_RUN" --data "$data_dir" --check; then
+		logger -t sponsorblocktv "refusing to start: invalid configuration"
+		return 1
+	fi
+	# Explicitly name the single instance: some procd variants shift $1
+	# unconditionally. Preserve the usual default instance name.
+	procd_open_instance instance1
+	# procd does not inherit the init script's environment, so the app
+	# directory must be declared explicitly or the launcher falls back to
+	# its compiled-in default. UCODE_PATH lets the CLI scripts import the
+	# ucode lib/ modules by bare name.
+	procd_set_param env SBTV_APP_DIR="$APP_DIR" UCODE_PATH="$APP_DIR"
+	if [ "$debug" = "1" ] && [ "$http_tracing" = "1" ]; then
+		procd_set_param command /usr/bin/ucode -g 1000 "$APP_RUN" \
+			--data "$data_dir" --debug --http-tracing
+	elif [ "$debug" = "1" ]; then
+		procd_set_param command /usr/bin/ucode -g 1000 "$APP_RUN" \
+			--data "$data_dir" --debug
+	elif [ "$http_tracing" = "1" ]; then
+		procd_set_param command /usr/bin/ucode -g 1000 "$APP_RUN" \
+			--data "$data_dir" --http-tracing
+	else
+		procd_set_param command /usr/bin/ucode -g 1000 "$APP_RUN" \
+			--data "$data_dir"
+	fi
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param file /etc/config/sponsorblocktv
+	procd_set_param limits core="0"
+	procd_set_param term_timeout 6
+	procd_close_instance
+}
+
+reload_service() {
+    config_load sponsorblocktv
+    if running || is_enabled; then
+        local has_device=0 data_dir
+        config_foreach has_valid_device device
+        if [ "$has_device" = 1 ]; then
+            config_get data_dir main data_dir /etc/sponsorblocktv/data
+            "$WRITE_CONFIG" "$data_dir" || {
+                logger -t sponsorblocktv 'reload rejected: could not write config; retaining running service'
+                return 1
+            }
+            if [ -x "$APP_RUN" ] && ! /usr/bin/ucode "$APP_RUN" --data "$data_dir" --check; then
+                logger -t sponsorblocktv 'reload rejected: invalid configuration; retaining running service'
+                return 1
+            fi
+        fi
+        stop || {
+            logger -t sponsorblocktv 'reload aborted: could not stop previous service'
+            return 1
+        }
+        start
+    fi
+}
+
+service_triggers() {
+	procd_add_reload_trigger sponsorblocktv
+}

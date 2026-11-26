@@ -1,0 +1,34 @@
+#!/usr/bin/env ucode
+// sponsorblocktv-write-config - translate UCI into config.json (ucode).
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+'use strict';
+
+import * as util from '/usr/lib/sponsorblocktv/util.uc';
+import * as config from '/usr/lib/sponsorblocktv/config.uc';
+
+function main(argv) {
+	if(length(argv)>1){util.error('write-config','Expected at most one data directory');return 2;}
+	let data_dir = null;
+	if (length(argv) >= 1)
+		data_dir = argv[0];
+	if (!data_dir)
+		data_dir = getenv('SBTV_DATA_DIR') || '/etc/sponsorblocktv/data';
+
+	let text;
+	try {
+		text = config.read_uci();
+	}
+	catch (e) {
+		util.error('write-config', '' + e);
+		return 1;
+	}
+
+	let cfg,path;
+	try{cfg=config.build_config(config.parse_uci_show(text));config.validate_runtime_config(cfg,true);path=config.write_config(cfg,data_dir);}
+	catch(e){util.error('write-config','Configuration rejected: '+e);return 1;}
+	util.info('write-config', sprintf('Wrote %s (%d device(s))', path, length(cfg.devices)));
+	return 0;
+}
+
+exit(main(ARGV));

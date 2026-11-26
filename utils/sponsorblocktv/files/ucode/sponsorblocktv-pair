@@ -1,0 +1,95 @@
+#!/usr/bin/env ucode
+// sponsorblocktv-pair - pair a YouTube TV / Cast device and store it in UCI.
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Usage:
+//   sponsorblocktv-pair --code TV_CODE [--section @device[0]] [--name "Living room"]
+//   sponsorblocktv-pair --list
+
+'use strict';
+
+import * as util from '/usr/lib/sponsorblocktv/util.uc';
+import * as sb from '/usr/lib/sponsorblocktv/sponsorblock.uc';
+import * as pair_store from '/usr/lib/sponsorblocktv/pair_store.uc';
+
+let uloop = require('uloop');
+
+const PACKAGE = 'sponsorblocktv';
+
+function parse_args(argv) {
+    let args={code:null,section:'',name:'',list:false};
+    let seen={};
+    for(let i=0;i<length(argv);i++){
+        let key=argv[i];
+        if(seen[key] || index(['--list','--code','--section','--name'],key)<0)return null;
+        seen[key]=true;
+        if(key=='--list'){args.list=true;continue;}
+        let val=argv[++i];if(val==null)return null;
+        if(key=='--code')args.code=val;
+        else if(key=='--section')args.section=val;
+        else args.name=val;
+    }
+    if(args.list && (seen['--section']||seen['--name']))return null;
+    if(seen['--section'] && !match(args.section,/^([A-Za-z0-9_]+|@device\[[0-9]+\])$/))return null;
+    if(length(args.name)>200 || match(args.name,/[[:cntrl:]]/))return null;
+    if(!args.code || !match(replace(args.code,/[- ]/g,''),/^[0-9]{12}$/))return null;
+    return args;
+}
+// --- main -----------------------------------------------------------------
+
+function main(argv) {
+	let args = parse_args(argv);
+	if (!args) {
+		util.error('pair', 'Expected a 12-digit TV code; invalid arguments');
+		return 2;
+	}
+
+	uloop.init();
+
+	let result = null;
+	let error = null;
+
+	sb.pair_with_code(args.code, (device) => {
+		result = device;
+		uloop.end();
+	}, (err) => {
+		error = err;
+		uloop.end();
+	});
+
+	uloop.run();
+
+	if (error) {
+		util.error('pair', 'pairing failed: ' + error);
+		return 1;
+	}
+	if (!result) {
+		util.error('pair', 'pairing failed: invalid code, or the TV did not respond');
+		return 1;
+	}
+
+	let screen_id = result.screen_id;
+	let name = args.name || result.name || 'YouTube on TV';
+	if (!screen_id) {
+		util.error('pair', 'pairing response did not include a screen_id');
+		return 1;
+	}
+
+	if (args.list) {
+		printf('%.J\n', { screen_id: screen_id, name: name });
+		return 0;
+	}
+
+	try {
+		let section = pair_store.store_device(args.section, screen_id, name);
+		util.info('pair', sprintf("Paired '%s' into %s.%s", name, PACKAGE, section));
+		return 0;
+	}
+	catch (e) {
+		util.error('pair', 'paired, but could not save to UCI: ' + e);
+		printf('%.J\n', { screen_id: screen_id, name: name });
+		return 1;
+	}
+}
+
+exit(main(ARGV));

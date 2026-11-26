@@ -1,0 +1,51 @@
+#!/usr/bin/env ucode
+// SPDX-License-Identifier: GPL-3.0-or-later
+'use strict';
+import * as config from '/usr/lib/sponsorblocktv/config.uc';
+import * as util from '/usr/lib/sponsorblocktv/util.uc';
+import * as fs from 'fs';
+let ubus=require('ubus');
+function main(args){
+    let op=args[0],section=args[1],key=args[2],value=args[3];
+    if(!match(section||'',/^[A-Za-z0-9_]+$/) || !((op=='get' && length(args)==2)||(op=='set' && length(args)==4)))die('Invalid TV policy arguments');
+    if(op=='set' && !config.valid_policy_value(key,value,false))die('Invalid TV policy');
+    let sections=config.parse_uci_show(config.read_uci()),cfg=config.build_config(sections);
+    config.validate_runtime_config(cfg,true);
+    let device=filter(cfg.devices,(d)=>d.config_section==section)[0];
+    if(!device)die('Unknown configured TV');
+    let main=filter(sections,(d)=>d.type=='sponsorblocktv')[0];
+    let dir=main?.options?.data_dir||'/etc/sponsorblocktv/data',id=util.md5_hex(device.screen_id);
+    config.validate_data_dir(dir);
+    // A running listener owns its policy writes; route to it if it appeared
+    // while the UI was displaying an inactive card.
+    let conn=ubus.connect();
+    if(!conn)die('Cannot check runtime status');
+    let status=conn.call('sponsorblocktv.live','status',{});
+    let live=filter(status?.devices||[],(d)=>d.id==id)[0];
+    if(live){
+        if(!live.policy_ready)die('TV policy storage unavailable');
+        if(op=='get')return {policies:live.policy_overrides};
+        let result=conn.call('sponsorblocktv.live','policy',{id:id,key:key,value:value});
+        if(!result?.saved)die(result?.error||'Unable to save running TV policy');
+        return result;
+    }
+    let saved=config.read_policy(dir,id),next=config.initial_policy(cfg,device);
+    for(let k in config.POLICY_KEYS)if(saved[k]!=null && saved[k]!='inherit')next[k]=saved[k];
+    if(op=='get')return {policies:next};
+    let parent=fs.dirname(dir);
+    if(!fs.lstat(parent) && !fs.mkdir(parent,0755))die('Cannot create TV data directory');
+    if(!fs.lstat(dir) && !fs.mkdir(dir,0700))die('Cannot create TV data directory');
+    config.validate_data_dir(dir);
+    if(!fs.chmod(dir,0700))die('Cannot protect TV data directory');
+    next[key]=value;
+    config.save_policy(dir,id,next);
+    // Handle a listener starting during this operation.
+    status=conn.call('sponsorblocktv.live','status',{});
+    live=filter(status?.devices||[],(d)=>d.id==id)[0];
+    if(live && live.policy_ready){
+        let result=conn.call('sponsorblocktv.live','policy',{id:id,key:key,value:value});
+        if(result?.saved)return result;
+    }
+    return {saved:true,policies:next,deferred:true};
+}
+try{printf('%.J\n',main(ARGV));}catch(e){printf('%.J\n',{error:''+e});exit(1);}

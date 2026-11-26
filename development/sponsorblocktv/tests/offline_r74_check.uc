@@ -1,0 +1,37 @@
+'use strict';
+import {YtLoungeApi} from './lib/lounge.uc';
+import {snapshot} from './lib/live.uc';
+import * as util from './lib/util.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'token'});
+a._sid='s';a._gsession='g';a._subscribe_active=true;
+let l={phase:'connected',lounge:a};
+a._session_started=util.monotonic_ms()-500;
+check(snapshot(l).connection=='checking','initial grace');
+a._session_started=util.monotonic_ms()-11000;
+a._subscribe_started=util.monotonic_ms();
+a._process_event('noop',[]);
+check(snapshot(l).connection=='offline','initial timeout survives backchannel renewal');
+a._process_event('nowPlaying',[{state:1,videoId:'abcdefghijk'}]);
+check(snapshot(l).connection=='connected','fresh screen event recovers');
+a._process_event('loungeStatus',[{devices:[{type:'REMOTE_CONTROL',id:'remote',name:'Phone'}]}]);
+check(snapshot(l).connection=='offline','roster without TV is offline immediately');
+a._connection_lost();l.phase='reconnecting';
+check(snapshot(l).connection=='offline','offline persists across reconnect');
+l.phase='network_error';
+check(snapshot(l).connection=='network_error','network errors distinct');
+l.phase='auth_error';
+check(snapshot(l).connection=='auth_error','auth errors distinct');
+l.phase='connected';a._sid='s';a._gsession='g';a._subscribe_active=true;
+a._process_event('onVolumeChanged',[{volume:35,muted:false}]);
+check(snapshot(l).connection=='connected','confirmed return clears offline latch');
+a._last_screen_event_time=util.monotonic_ms()-36000;
+a._process_event('noop',[]);
+check(snapshot(l).connection=='offline','heartbeat is not proof of screen');
+a._start_watchdog(()=>{
+ check(!a.connected() && a._screen_missing,'watchdog tears down stale screen');
+ print('PASS: bounded checking, roster loss, reconnect latch, error distinction and recovery\n');u.end();
+});
+u.timer(6500,()=>die('watchdog timeout'));
+u.run();

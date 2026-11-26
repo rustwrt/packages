@@ -1,0 +1,27 @@
+'use strict';
+import {YtLoungeApi} from './lib/lounge.uc';
+import {snapshot} from './lib/live.uc';
+let u=require('uloop');u.init();
+function check(ok,msg){if(!ok)die(msg);}
+let a=YtLoungeApi({screen_id:'fixture',lounge_token:'token'});
+a._sid='s';a._gsession='g';a._subscribe_active=true;
+let l={phase:'connected',lounge:a};
+a.on_state_change=(st)=>{l._current_state={...st};};
+a._process_event('nowPlaying',[{videoId:'abcdefghijk',state:2,currentTime:15,duration:100}]);
+a._process_event('onVideoQualityChanged',[{videoId:'abcdefghijk',qualityLevel:'hd720'}]);
+check(snapshot(l).quality=='hd720','matching quality report');
+a._process_event('onVideoQualityChanged',[{videoId:'lmnopqrstuv',qualityLevel:'hd1080'}]);
+check(snapshot(l).quality=='hd720','foreign quality ignored');
+a._process_event('onVideoQualityChanged',[{quality:{bad:true}}]);
+check(snapshot(l).quality=='hd720','malformed update preserves valid report');
+a._ad_active=true;
+a._process_event('onVideoQualityChanged',[{qualityLevel:'tiny'}]);
+check(snapshot(l).quality==null && a.quality=='hd720','ad quality isolated');
+a._ad_active=false;
+a._process_event('nowPlaying',[{videoId:'lmnopqrstuv',state:2,currentTime:0,duration:100}]);
+check(snapshot(l).quality==null,'new video clears old quality');
+a._process_event('onVideoQualityChanged',[{quality:'hd1080'}]);
+check(snapshot(l).quality=='hd1080','current anonymous quality report');
+a._connection_lost();
+check(snapshot(l).quality==null && a.quality==null,'disconnect clears quality');
+print('Per-video quality telemetry, ad isolation and stale event rejection OK\n');

@@ -1,0 +1,163 @@
+#!/usr/bin/env ucode
+// Parallel discovery CLI, bounded per-scan snapshots.
+'use strict';
+import * as fs from 'fs';
+import * as util from '/usr/lib/sponsorblocktv/util.uc';
+import * as discovery from '/usr/lib/sponsorblocktv/discovery.uc';
+import * as pair_store from '/usr/lib/sponsorblocktv/pair_store.uc';
+import { YtLoungeApi } from '/usr/lib/sponsorblocktv/lounge.uc';
+let uloop=require('uloop');
+const ROOT='/tmp/sbtv-scan-';
+const LOCK='/tmp/sbtv-scan-lock';
+function reply(data,rc) { printf('%.J\n',data); return rc||0; }
+function safe_dir(path) {
+    let s=fs.lstat(path);
+    return s && s.type=='directory' && s.uid==0 && (s.mode & 511)==448;
+}
+function read_snapshot(dir) {
+    if (!safe_dir(dir)) return null;
+    let s=fs.lstat(dir+'/result.json');
+    if (!s || s.type!='file' || s.uid!=0 || time()-s.mtime>180 || s.size>262144) return null;
+    try { return json(fs.readfile(dir+'/result.json')); } catch(e) { return null; }
+}
+function clean_old() {
+    for(let name in fs.lsdir('/tmp')||[]) {
+        if(!match(name,/^sbtv-scan-[a-f0-9]{32}$/)) continue;
+        let dir='/tmp/'+name, st=fs.lstat(dir);
+        if(!safe_dir(dir)||time()-st.mtime<300) continue;
+        for(let f in fs.lsdir(dir)||[])
+            if(index(['result.json','result.tmp','cast.json','cast.tmp'],f)>=0 || match(f,/^probe-[a-f0-9-]{36}\.(json|tmp)$/))fs.unlink(dir+'/'+f);
+        fs.rmdir(dir);
+    }
+}
+function verify_and_store(d) {
+    if (!match(d.screen_id||'',/^[A-Za-z0-9_-]{8,128}$/)) return reply({error:'Invalid Screen ID'},1);
+    let api=YtLoungeApi({screen_id:d.screen_id});
+    let result=false, finished=false, reason='TV verification timed out. Check the router Internet connection and retry.',retry=null;
+    uloop.init();
+    function finish(ok,message) { if(finished)return;finished=true;result=ok;if(message)reason=message;if(retry)retry.cancel();uloop.end(); }
+    let timer=uloop.timer(22000,()=>finish(false));
+    function availability(attempt){
+        if(finished)return;
+        api.is_available((online)=>{
+            if(finished)return;
+            if(online)finish(true);
+            else if(attempt==0)retry=uloop.timer(800,()=>availability(1));
+            else finish(false,'YouTube reports this TV offline. Open YouTube or link with a TV code and retry.');
+        },(err)=>finish(false,'Unable to check TV availability. Check the Internet connection or use the TV code.'));
+    }
+    api.refresh_auth((ok)=>{
+        if(finished)return;
+        if(!ok || api.screen_id!=d.screen_id) {finish(false,'YouTube did not issue a valid Lounge token. Open YouTube or use the TV code.');return;}
+        availability(0);
+    },(err)=>finish(false,'Lounge authentication request failed. Check the router Internet connection.'));
+    if(!finished)uloop.run();
+    timer.cancel();
+    if(!result)return reply({error:reason},1);
+    try {pair_store.store_device('',d.screen_id,d.name);return reply({added:true,name:d.name});}
+    catch(e){return reply({error:''+e},1);}
+}
+function connect_candidate(d) {
+    // The target is a validated IPv4 from a fresh root-owned scan snapshot,
+    // never a user-supplied URL, host or command line.
+    let p=fs.popen('/usr/sbin/sponsorblocktv-cast-bridge query-lan '+d.host,'r');
+    if(!p)return reply({error:'Unable to start Cast connection. Use the TV code.'},1);
+    let raw=p.read('all');p.close();
+    let found;
+    try{found=json(raw||'{}');}catch(e){found={};}
+    if(type(found?.screen_id)!='string' || !match(found.screen_id,/^[A-Za-z0-9_-]{8,128}$/))
+        return reply({error:'Unable to obtain YouTube Screen ID. Open YouTube on the TV or use the TV code.'},1);
+    return verify_and_store({screen_id:found.screen_id,name:d.name});
+}
+function acquire_scan() {
+    if(fs.mkdir(LOCK,0700))return true;
+    let st=fs.lstat(LOCK);
+    if(safe_dir(LOCK) && time()-st.mtime>90 && fs.rmdir(LOCK))return fs.mkdir(LOCK,0700);
+    return false;
+}
+function run_scan(id,add) {
+    clean_old();
+    if(!id) { let f=fs.open('/dev/urandom','r'); id=util.md5_hex(f.read(32)); f.close(); }
+    let dir=ROOT+id;
+    if(!fs.mkdir(dir,0700) || !safe_dir(dir)) return reply({error:'Scan already exists'},1);
+    uloop.init();
+    let devices={}, candidates={}, warnings=[], pending=true, publish_error=false;
+    function snapshot() {
+        let out=[], unpaired=[], ready_names={}, ready_ids={};
+        for(let sid in keys(devices)) {
+            let d=devices[sid];
+            let info=discovery.scan_device_info(d,true);if(info)push(out,info);
+            if(d.host && d.name) ready_names[d.host+'|'+lc(d.name)]=true;
+            if(d.id) ready_ids[d.id]=true;
+        }
+        // Merge only cross-protocol candidates on the same known host.
+        let cast_names={};
+        for(let key in keys(candidates)) { let d=candidates[key]; if(d.source=='Cast' && d.host && d.name) cast_names[d.host+'|'+lc(d.name)]=true; }
+        for(let key in keys(candidates)) {
+            let d=candidates[key];
+            if(ready_ids[d.id] || (d.source=='DIAL' && d.host && d.name && (cast_names[d.host+'|'+lc(d.name)] || ready_names[d.host+'|'+lc(d.name)]))) continue;
+            let info=discovery.scan_device_info(d,false);if(info)push(unpaired,info);
+        }
+        return {devices:out,unpaired:unpaired,pending:pending,warnings:warnings,scan_id:id};
+    }
+    function publish() {
+        let text=sprintf('%.J',snapshot());
+        if(length(text)>262144 || fs.writefile(dir+'/result.tmp',text)!=length(text) || !fs.rename(dir+'/result.tmp',dir+'/result.json')){
+            fs.unlink(dir+'/result.tmp');publish_error=true;
+        }
+    }
+    publish();
+    function warn(e){if(length(warnings)<32)push(warnings,substr(''+e,0,200));}
+    let scan;
+    let deadline=uloop.timer(35000,()=>{warn('Scan deadline reached; results may be incomplete');pending=false;if(scan)scan.stop();uloop.end();});
+    scan=discovery.discover_youtube_devices({
+        cast_path:dir+'/cast.json',
+        on_device:(d)=>{if(pending && type(d?.screen_id)=='string' && match(d.screen_id,/^[A-Za-z0-9_-]{8,128}$/) && (length(keys(devices))<128 || devices[d.screen_id])){devices[d.screen_id]=d;publish();}},
+        on_candidate:(d)=>{if(pending && type(d?.id)=='string' && length(d.id)<=256 && (length(keys(candidates))<128 || candidates[d.id])){candidates[d.id]=d;publish();}},
+        on_warning:(e)=>{if(pending){warn(e);publish();}},
+        on_done:()=>{if(pending){pending=false;deadline.cancel();uloop.end();}}
+    });
+    if(pending)uloop.run();
+    deadline.cancel();pending=false;
+    if(publish_error)warn('Scan progress could not be saved');
+    publish();
+    if(publish_error)return reply({error:'Scan snapshot could not be saved',warnings:warnings},1);
+    if(add) {
+        let d=devices[add];
+        if(!d) return reply({error:'Selected screen was not rediscovered'},1);
+        return verify_and_store(d);
+    }
+    return reply(snapshot());
+}
+function main(argv) {
+    let id=null, add=null, status=false;
+    // Keep read-only RPC command shapes disjoint from the write-only add shape.
+    if(length(argv)==2 && argv[0]=='--scan') id=argv[1];
+    else if(length(argv)==2 && argv[0]=='--status') {status=true;id=argv[1];}
+    else if(length(argv)==2 && argv[0]=='--add') add=argv[1];
+    else if(length(argv)==4 && argv[0]=='--add' && argv[2]=='--scan') {add=argv[1];id=argv[3];}
+    else if(length(argv)!=0) return reply({error:'Invalid arguments'},1);
+    if(id!=null && !match(id,/^[a-f0-9]{32}$/)) return reply({error:'Invalid scan ID'},1);
+    if(status) {
+        let snap=id && read_snapshot(ROOT+id);
+        if(snap)return reply(snap);
+        if(fs.lstat(ROOT+id))return reply({error:'Scan result unavailable or expired',scan_id:id,pending:false},1);
+        return reply({devices:[],unpaired:[],pending:true,scan_id:id});
+    }
+    if(add && id) {
+        let snap=read_snapshot(ROOT+id);
+        if(!snap || snap.scan_id!=id) return reply({error:'Scan result expired or incomplete; rescan'},1);
+        // Each published snapshot is atomic; a discovered screen is eligible
+        // immediately, even while other receivers are still being scanned.
+        let target=discovery.select_add_target(snap,id,add);
+        if(target?.device)return verify_and_store(target.device);
+        if(target?.candidate)return connect_candidate(target.candidate);
+        return reply({error:'TV was not found in this scan or scan is incomplete; rescan'},1);
+    }
+    if(!acquire_scan())return reply({error:'Another network scan is running. Retry when it finishes.'},1);
+    let rc;
+    try {rc=run_scan(id,add);} catch(e){rc=reply({error:''+e},1);}
+    fs.rmdir(LOCK);
+    return rc;
+}
+exit(main(ARGV));
